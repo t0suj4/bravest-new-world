@@ -1,517 +1,746 @@
-local function get_default_qb_slots(seablock_enabled)
-    local qb_slots
-    if seablock_enabled then
-        qb_slots = {
-                [1]  = game.item_prototypes["basic-transport-belt"] and "basic-transport-belt" or "transport-belt",
-                [2]  = game.item_prototypes["basic-underground-belt"] and "basic-underground-belt" or "underground-belt",
-                [3]  = game.item_prototypes["basic-transport-belt"] and "basic-splitter" or "splitter",
-                [4]  = "inserter",
-                [5]  = "assembling-machine-1",
-                [6]  = "small-electric-pole",
-                [7]  = "stone-pipe",
-                [8]  = "stone-pipe-to-ground",
-                [9]  = "offshore-pump",
-                [10] = "small-lamp",
-                [11] = "roboport",
-                [12] = "logistic-chest-storage",
-                [13] = "logistic-chest-requester",
-                [14] = "logistic-chest-passive-provider",
-                [15] = "logistic-chest-buffer",
-                [16] = nil,
-                [17] = nil,
-                [18] = nil,
-                [19] = nil,
-                [20] = nil,
-                [21] = "angels-electrolyser",
-                [22] = "angels-flare-stack",
-                [23] = "burner-ore-crusher",
-                [24] = "liquifier",
-                [25] = "crystallizer",
-                [26] = "stone-furnace",
-                [27] = "algae-farm"
-        }
-    else
-        qb_slots = {
-                [1]  = game.item_prototypes["basic-transport-belt"] and "basic-transport-belt" or "transport-belt",
-                [2]  = game.item_prototypes["basic-underground-belt"] and "basic-underground-belt" or "underground-belt",
-                [3]  = game.item_prototypes["basic-transport-belt"] and "basic-splitter" or "splitter",
-                [4]  = "inserter",
-                [5]  = "long-handed-inserter",
-                [6]  = "medium-electric-pole",
-                [7]  = "assembling-machine-1",
-                [8]  = "small-lamp",
-                [9]  = "stone-furnace",
-                [10] = "electric-mining-drill",
-                [11] = "roboport",
-                [12] = "logistic-chest-storage",
-                [13] = "logistic-chest-requester",
-                [14] = "logistic-chest-passive-provider",
-                [15] = "logistic-chest-buffer",
-                [16] = "gun-turret",
-                [17] = "stone-wall",
-                [18] = nil,
-                [19] = nil,
-                [20] = "radar",
-                [21] = "offshore-pump",
-                [22] = "pipe-to-ground",
-                [23] = "pipe",
-                [24] = "boiler",
-                [25] = "steam-engine",
-                [26] = "burner-inserter"
-        }
-    end
-    return qb_slots
-end
+require("globals")
+local freeplay = require("__base__/script/freeplay/freeplay")
 
-local function itemCountAllowed(name, count, player)
-    local item = game.item_prototypes[name]
-    local place_type = item.place_result and item.place_result.type
-    if name == "red-wire" or name == "green-wire" then
-        -- need these for circuitry, one stack is enough
-        return math.min(200, count)
-    elseif name == "copper-cable" then
-        -- need this for manually connecting poles, but don't want player to manually move stuff around so we'll limit it
-        return math.min(20, count)
-    elseif item.type == "blueprint" or item.type == "deconstruction-item" or item.type == "blueprint-book" or item.type == "selection-tool" or name == "artillery-targeting-remote" or name == "spidertron-remote" or item.type == "upgrade-item" or item.type == "copy-paste-tool" or item.type == "cut-paste-tool" or name == "tl-adjust-capsule" or name == "tl-draw-capsule" or name == "tl-edit-capsule" then
-        -- these only place ghosts or are utility items
-        return count
-    elseif place_type == "car" or place_type == "spider-vehicle" then
-        -- let users put down cars & tanks
-        return count
-    elseif item.place_as_equipment_result then
-        -- let user carry equipment
-        return count
-    elseif string.match(name, ".*module.*") then
-        -- allow modules
-        return count
-    elseif name == "BlueprintAlignment-blueprint-holder" then
-        -- temporary holding location for original blueprint, should only ever be one of these.
-        return count
-    end
-    return 0
-end
-
-local function dropItems(player, name, count)
-    local entity = player.opened or player.selected
-    local inserted = 0
-    if entity and entity.insert then
-        -- in case picking up items from a limited chest, unset limit, insert, then set limit again
-        for _, inventory_id in pairs(defines.inventory) do
-            local inventory = entity.get_inventory(inventory_id)
-            if inventory then
-                local barpos = inventory.supports_bar() and inventory.get_bar() or nil
-                if inventory.supports_bar() then
-                    inventory.set_bar() -- clear bar (the chest size limiter)
-                end
-                inserted = inserted + inventory.insert{name = name, count = count}
-                count = count - inserted
-                if inventory.supports_bar() then
-                    inventory.set_bar(barpos) -- reset bar
-                end
-                if count <= 0 then
-                    break
-                end
-            end
-        end
-        if count > 0 then
-            -- try a generic insert (although code above should make this redundant)
-            count = count - entity.insert({name = name, count = count})
-        end
-    end
-    if count > 0 then
-        -- now we're forced to spill items
-        entity = entity or global.forces[player.force.name].roboport
-        entity.surface.spill_item_stack(entity.position, {name = name, count = count}, false, entity.force, false)
-    end
-end
-
-local function inventoryChanged(event)
-    if global.creative then
-        return
-    end
-    local player = game.players[event.player_index]
-    -- remove any crafted items (and possibly make ghost cursor of item)
-    for _, item in pairs(global.players[event.player_index].crafted) do
-        if itemCountAllowed(item.name, item.count, player) == 0 then
-            if player.clean_cursor() then
-                player.cursor_stack.clear()
-            end
-        end
-        player.cursor_ghost = game.item_prototypes[item.name]
-        player.remove_item(item)
-    end
-    global.players[event.player_index].crafted = {}
-
-    -- player is only allowed to carry whitelisted items
-    -- everything else goes into entity opened or entity beneath mouse cursor
-    local inventory_main = player.get_inventory(defines.inventory.god_main)
-    if inventory_main == nil then
-        return
-    end
-
-    local items = {}
-    for i = 1, #inventory_main do
-        local item_stack = inventory_main[i]
-        if item_stack and item_stack.valid_for_read and not item_stack.is_blueprint then
-            local name = item_stack.name
-            if items[name] then
-                items[name].count = items[name].count + item_stack.count
-            else
-                items[name] = {
-                    count = item_stack.count,
-                    slot = item_stack
-                }
-            end
-        end
-    end
-    global.players[event.player_index].inventory_items = items
-
-    local entity = player.selected or player.opened
-    for name, item in pairs(items) do
-        local allowed = itemCountAllowed(name, item.count, player)
-        local to_remove = item.count - allowed
-        if to_remove > 0 then
-            dropItems(player, name, to_remove)
-            player.remove_item{name = name, count = to_remove}
-        end
-    end
-end
-
-local function setupForce(force, surface, x, y, seablock_enabled)
-    if not global.forces then
-        global.forces = {}
-    end
-    if global.forces[force.name] then
-        -- force already exist
-        return
-    end
-    global.forces[force.name] = {}
-
-    -- setup event listeners for creative mode
-    if remote.interfaces["creative-mode"] then
-        script.on_event(remote.call("creative-mode", "on_enabled"), function(event)
-            global.creative = true
-        end)
-        script.on_event(remote.call("creative-mode", "on_disabled"), function(event)
-            global.creative = false
-        end)
-    end
-
-    -- give player the possibility to build robots & logistic chests from the start
-    force.technologies["construction-robotics"].researched = true
-    force.technologies["logistic-robotics"].researched = true
-    force.technologies["logistic-system"].researched = true
-
-    -- research some techs that require manual labour
-    local seablock_items = {}
-    if seablock_enabled and remote.interfaces["SeaBlock"] then
-        seablock_items = remote.call("SeaBlock", "get_starting_items")
-        remote.call("SeaBlock", "set_starting_items", nil)
-
-        local unlocks = remote.call("SeaBlock", "get_unlocks")
-        for _,techs in pairs(unlocks) do
-            for _,tech in pairs(techs) do
-                if force.technologies[tech] then
-                    force.technologies[tech].researched = true
-                end
-            end
-        end
-    end
-
-    -- setup starting location
-    local water_replace_tile = "sand-1"
-    force.chart(surface, {{x - 192, y - 192}, {x + 192, y + 192}})
-    if not seablock_enabled then
-        water_replace_tile = "dirt-3"
-        -- oil is rare, but mandatory to continue research. add some oil patches near spawn point
-        local xx = x + math.random(16, 32) * (math.random(1, 2) == 1 and 1 or -1)
-        local yy = y + math.random(16, 32) * (math.random(1, 2) == 1 and 1 or -1)
-        local tiles = {}
-        surface.create_entity{name = "crude-oil", amount = math.random(100000, 250000), position = {xx, yy}, raise_built = true}
-        for xxx = xx - 2, xx + 2 do
-            for yyy = yy - 2, yy + 2 do
-                local tile = surface.get_tile(xxx, yyy)
-                local name = tile.name
-                if tile.prototype.layer <= 4 then
-                    name = water_replace_tile
-                end
-                tiles[#tiles + 1] = {name = name, position = {xxx, yyy}}
-            end
-        end
-        xxx = xx + math.random(-8, 8)
-        yyy = yy - math.random(4, 8)
-        for xxxx = xxx - 2, xxx + 2 do
-            for yyyy = yyy - 2, yyy + 2 do
-                local tile = surface.get_tile(xxxx, yyyy)
-                local name = tile.name
-                if tile.prototype.layer <= 4 then
-                    name = water_replace_tile
-                end
-                tiles[#tiles + 1] = {name = name, position = {xxxx, yyyy}}
-            end
-        end
-        surface.create_entity{name = "crude-oil", amount = math.random(100000, 250000), position = {xxx, yyy}, raise_built = true}
-        xxx = xx + math.random(-8, 8)
-        yyy = yy + math.random(4, 8)
-        for xxxx = xxx - 2, xxx + 2 do
-            for yyyy = yyy - 2, yyy + 2 do
-                local tile = surface.get_tile(xxxx, yyyy)
-                local name = tile.name
-                if tile.prototype.layer <= 4 then
-                    name = water_replace_tile
-                end
-                tiles[#tiles + 1] = {name = name, position = {xxxx, yyyy}}
-            end
-        end
-        surface.create_entity{name = "crude-oil", amount = math.random(100000, 250000), position = {xxx, yyy}, raise_built = true}
-        surface.set_tiles(tiles)
-    end
-
-    -- remove trees/stones/resources
-    local entities = surface.find_entities_filtered{area = {{x - 16, y - 7}, {x + 15, y + 9}}, force = "neutral"}
-    for _, entity in pairs(entities) do
-        entity.destroy()
-    end
-    -- place dirt beneath structures
-    tiles = {}
-    for xx = x - 14, x + 13 do
-        for yy = y - 5, y + 7 do
-            local tile = surface.get_tile(xx, yy)
-            local name = tile.name
-            if tile.prototype.layer <= 4 then
-                name = water_replace_tile
-            end
-            tiles[#tiles + 1] = {name = name, position = {xx, yy}}
-        end
-    end
-    surface.set_tiles(tiles)
-
-    -- place walls
-    for xx = x - 3, x + 2 do
-        surface.create_entity{name = "stone-wall", position = {xx, y - 3}, force = force, raise_built = true}
-        surface.create_entity{name = "stone-wall", position = {xx, y + 5}, force = force, raise_built = true}
-    end
-    for yy = y - 3, y + 5 do
-        surface.create_entity{name = "stone-wall", position = {x - 3, yy}, force = force, raise_built = true}
-        surface.create_entity{name = "stone-wall", position = {x + 2, yy}, force = force, raise_built = true}
-    end
-    -- roboport
-    local config = global.forces[force.name]
-    config.roboport = surface.create_entity{name = "roboport", position = {x, y}, force = force, raise_built = true}
-    config.roboport.minable = false
-    config.roboport.energy = 100000000
-    local roboport_inventory = config.roboport.get_inventory(defines.inventory.roboport_robot)
-    if settings.startup["bnw-homeworld-starting-robots"].value then
-       roboport_inventory.insert{name = "bnw-homeworld-construction-robot", count = 100}
-    else
-       roboport_inventory.insert{name = "construction-robot", count = 100}
-    end
-    if settings.startup["bnw-homeworld-starting-robots"].value then
-       roboport_inventory.insert{name = "bnw-homeworld-logistic-robot", count = 50}
-    else
-       roboport_inventory.insert{name = "logistic-robot", count = 50}
-    end
-
-    roboport_inventory = config.roboport.get_inventory(defines.inventory.roboport_material)
-    roboport_inventory.insert{name = "repair-pack", count = 10}
-    -- electric pole
-    local electric_pole = surface.create_entity{name = "medium-electric-pole", position = {x + 1, y + 2}, force = force, raise_built = true}
-    -- radar
-    surface.create_entity{name = "radar", position = {x - 1, y + 3}, force = force, raise_built = true}
-    -- storage chest, contains the items the force starts with
-    local chest1 = surface.create_entity{name = "logistic-chest-storage", position = {x + 1, y + 3}, force = force, raise_built = true}
-    local chest2 = surface.create_entity{name = "logistic-chest-storage", position = {x + 1, y + 4}, force = force, raise_built = true}
-    local chest_inventory = chest1.get_inventory(defines.inventory.chest)
-
-    if game.item_prototypes["basic-transport-belt"] then
-        chest_inventory.insert{name = "basic-transport-belt", count = 400}
-        chest_inventory.insert{name = "basic-underground-belt", count = 20}
-        chest_inventory.insert{name = "basic-splitter", count = 10}
-    else
-        chest_inventory.insert{name = "transport-belt", count = 400}
-        chest_inventory.insert{name = "underground-belt", count = 20}
-        chest_inventory.insert{name = "splitter", count = 10}
-    end
-    chest_inventory.insert{name = "inserter", count = 20}
-    chest_inventory.insert{name = "stone-furnace", count = 4}
-    chest_inventory.insert{name = "offshore-pump", count = 1}
-    chest_inventory.insert{name = "assembling-machine-1", count = 4}
-    chest_inventory.insert{name = "roboport", count = 4}
-    chest_inventory.insert{name = "logistic-chest-storage", count = 2}
-    chest_inventory.insert{name = "logistic-chest-passive-provider", count = 4}
-    chest_inventory.insert{name = "logistic-chest-requester", count = 4}
-    chest_inventory.insert{name = "logistic-chest-buffer", count = 4}
-    chest_inventory.insert{name = "logistic-chest-active-provider", count = 4}
-    chest_inventory.insert{name = "lab", count = 2}
-    if seablock_enabled then
-        -- need some stuff for SeaBlock so we won't get stuck (also slightly accelerate gameplay)
-        chest_inventory.insert{name = "offshore-pump", count = 1}
-        chest_inventory.insert{name = "wood-pellets", count = 50}
-        chest_inventory = chest2.get_inventory(defines.inventory.chest)
-        chest_inventory.insert{name = "angels-electrolyser", count = 4}
-        chest_inventory.insert{name = "angels-flare-stack", count = 2}
-        chest_inventory.insert{name = "burner-ore-crusher", count = 3}
-        chest_inventory.insert{name = "liquifier", count = 1}
-        chest_inventory.insert{name = "crystallizer", count = 1}
-        chest_inventory.insert{name = "algae-farm", count = 2}
-
-        local ignored_items = {
-            ["copper-pipe"] = true,
-            ["iron-gear-wheel"] = true,
-            ["iron-stick"] = true,
-            ["pipe"] = true,
-            ["pipe-to-ground"] = true,
-        }
-        for item_name, item_count in pairs(seablock_items) do
-            if not ignored_items[item_name] then
-              chest_inventory.insert{name = item_name, count = item_count}
-            end
-        end
-    else
-        -- only give player this when we're not seablocking
-        chest_inventory.insert{name = "electric-mining-drill", count = 4}
-        chest_inventory.insert{name = "pipe", count = 20}
-        chest_inventory.insert{name = "pipe-to-ground", count = 10}
-        chest_inventory.insert{name = "burner-inserter", count = 4}
-        chest_inventory.insert{name = "medium-electric-pole", count = 50}
-        chest_inventory.insert{name = "small-lamp", count = 10}
-        chest_inventory.insert{name = "boiler", count = 1}
-        chest_inventory.insert{name = "steam-engine", count = 2}
-        chest_inventory.insert{name = "gun-turret", count = 2}
-        chest_inventory.insert{name = "firearm-magazine", count = 20}
-    end
-    -- solar panels and accumulators (left side)
-    surface.create_entity{name = "solar-panel", position = {x - 11, y - 2}, force = force, raise_built = true}
-    surface.create_entity{name = "solar-panel", position = {x - 11, y + 1}, force = force, raise_built = true}
-    surface.create_entity{name = "solar-panel", position = {x - 11, y + 4}, force = force, raise_built = true}
-    surface.create_entity{name = "solar-panel", position = {x - 8, y + 4}, force = force, raise_built = true}
-    surface.create_entity{name = "solar-panel", position = {x - 5, y - 2}, force = force, raise_built = true}
-    surface.create_entity{name = "solar-panel", position = {x - 5, y + 4}, force = force, raise_built = true}
-    surface.create_entity{name = "medium-electric-pole", position = {x - 7, y}, force = force, raise_built = true}
-    surface.create_entity{name = "small-lamp", position = {x - 6, y}, force = force, raise_built = true}
-    local accumulator = surface.create_entity{name = "accumulator", position = {x - 8, y - 2}, force = force, raise_built = true}
-    accumulator.energy = 5000000
-    accumulator = surface.create_entity{name = "accumulator", position = {x - 8, y}, force = force, raise_built = true}
-    accumulator.energy = 5000000
-    accumulator = surface.create_entity{name = "accumulator", position = {x - 8, y + 2}, force = force, raise_built = true}
-    accumulator.energy = 5000000
-    accumulator = surface.create_entity{name = "accumulator", position = {x - 6, y + 2}, force = force, raise_built = true}
-    accumulator.energy = 5000000
-    accumulator = surface.create_entity{name = "accumulator", position = {x - 4, y + 2}, force = force, raise_built = true}
-    accumulator.energy = 5000000
-    -- solar panels and accumulators (right side)
-    surface.create_entity{name = "solar-panel", position = {x + 4, y - 2}, force = force, raise_built = true}
-    surface.create_entity{name = "solar-panel", position = {x + 4, y + 4}, force = force, raise_built = true}
-    surface.create_entity{name = "solar-panel", position = {x + 7, y + 4}, force = force, raise_built = true}
-    surface.create_entity{name = "solar-panel", position = {x + 10, y - 2}, force = force, raise_built = true}
-    surface.create_entity{name = "solar-panel", position = {x + 10, y + 1}, force = force, raise_built = true}
-    surface.create_entity{name = "solar-panel", position = {x + 10, y + 4}, force = force, raise_built = true}
-    surface.create_entity{name = "medium-electric-pole", position = {x + 6, y}, force = force, raise_built = true}
-    surface.create_entity{name = "small-lamp", position = {x + 5, y}, force = force, raise_built = true}
-    accumulator = surface.create_entity{name = "accumulator", position = {x + 4, y + 2}, force = force, raise_built = true}
-    accumulator.energy = 5000000
-    accumulator = surface.create_entity{name = "accumulator", position = {x + 6, y + 2}, force = force, raise_built = true}
-    accumulator.energy = 5000000
-    accumulator = surface.create_entity{name = "accumulator", position = {x + 8, y - 2}, force = force, raise_built = true}
-    accumulator.energy = 5000000
-    accumulator = surface.create_entity{name = "accumulator", position = {x + 8, y}, force = force, raise_built = true}
-    accumulator.energy = 5000000
-    accumulator = surface.create_entity{name = "accumulator", position = {x + 8, y + 2}, force = force, raise_built = true}
-    accumulator.energy = 5000000
-end
-
-local function preventMining(player)
-    -- prevent mining (this appeared to be reset when loading a 0.16.26 save in 0.16.27)
-    player.force.manual_mining_speed_modifier = -0.99999999 -- allows removing ghosts with right-click
-end
-
-script.on_event(defines.events.on_player_created, function(event)
-    if not global.players then
-        global.players = {}
-    end
-    local player = game.players[event.player_index]
-    global.players[event.player_index] = {
-        crafted = {},
-        inventory_items = {},
-        previous_position = player.position
+local default_quick_bar_slots = {
+    ["default"] = {
+        [1] = "transport-belt",
+        [2] = "underground-belt",
+        [3] = "splitter",
+        [4] = "inserter",
+        [5] = "long-handed-inserter",
+        [6] = "medium-electric-pole",
+        [7] = "assembling-machine-1",
+        [8] = "small-lamp",
+        [9] = "stone-furnace",
+        [10] = "electric-mining-drill",
+        [11] = "roboport",
+        [12] = "storage-chest",
+        [13] = "requester-chest",
+        [14] = "passive-provider-chest",
+        [15] = "buffer-chest",
+        [16] = "gun-turret",
+        [17] = "stone-wall",
+        [18] = nil,
+        [19] = nil,
+        [20] = "radar",
+        [21] = "offshore-pump",
+        [22] = "pipe-to-ground",
+        [23] = "pipe",
+        [24] = "boiler",
+        [25] = "steam-engine",
+        [26] = "burner-inserter",
     }
+}
 
-    if player.character then
-        player.character.destroy()
-        player.character = nil
+-- luacheck: push ignore
+--- @class InventoryItem
+--- @field name string
+--- @field count number
+--- @field quality? string
+local _
+
+--- @class EquipmentItem
+--- @field x number
+--- @field y number
+--- @field item string
+--- @field quality? string
+local _
+
+--- @class CreateForceOptions
+--- @field force LuaForce
+--- @field player? LuaPlayer
+--- @field home {position: Position, surface: LuaSurface}
+--- @field control_room {position: Position, surface: LuaSurface}
+--- @field launch_type string "initial" | "launch" | "creative"
+local _
+-- luacheck: pop
+
+--- @type table<planet:string, table<inventory:string, InventoryItem[]>>
+local starting_inventory = {
+    ["default"] = {
+        ["roboport-robots-1"] = {
+            { name = "construction-robot", count = 100 },
+            { name = "logistic-robot", count = 50 },
+        },
+        ["roboport-material-1"] = {
+            { name = "repair-pack", count = 10 },
+        },
+        ["chest-1"] = {
+            { name = "transport-belt", count = 400 },
+            { name = "underground-belt", count = 20 },
+            { name = "splitter", count = 10 },
+            { name = "inserter", count = 20 },
+            { name = "burner-inserter", count = 4 },
+            { name = "roboport", count = 4 },
+            { name = "storage-chest", count = 2 },
+            { name = "passive-provider-chest", count = 4 },
+            { name = "requester-chest", count = 4 },
+            { name = "pipe", count = 20 },
+            { name = "pipe-to-ground", count = 10 },
+            { name = "medium-electric-pole", count = 50 },
+            { name = "small-lamp", count = 10 },
+            { name = "gun-turret", count = 2 },
+            { name = "firearm-magazine", count = 20 },
+        },
+        ["chest-2"] = {
+            { name = "stone-furnace", count = 4 },
+            { name = "offshore-pump", count = 1 },
+            { name = "assembling-machine-1", count = 4 },
+            { name = "buffer-chest", count = 4 },
+            { name = "active-provider-chest", count = 4 },
+            { name = "lab", count = 2 },
+            { name = "electric-mining-drill", count = 4 },
+            { name = "boiler", count = 1 },
+            { name = "steam-engine", count = 2 },
+        },
+    }
+}
+
+local starting_blueprints = {
+    -- luacheck: push no max line length
+    ["default"] = "0eNqtmN1u3CAQhV+l4tqODAb/PUZ7uYoi1ku3SP4rxkmjyO9e7GzjtuvBjNq7tYQ/joczcNg3cm4mNRjdWVK9kbGTQ2z7+Gr0ZXn+QSrGI/JKqnKOiDyPfTNZFS/DBt1dSWXNpCIy9KO2uu9ioxpp9bP6i0HZysgcQ9d9N5Lq5ObS1042y4hOtopUxMGliQfZqYYsI7uLWt6dHyOiOusmUO8vrg+vT93UnpVxA6IPgO07Fb/IpiGbppuE8kGsGpIHMc/RHYQFQSj1U9IwSuKn8DBK6qeIMArzU7IwCvdT8mhvje8xNwrdpxQfFFnXUzs5q/XmnvLuV7pHKMN05H4dNEE5jgEUnG8hLQy3QJCYFIeB1PDAhc4OOCJsqVkCrzXNwrQwdqAFaV4OYFDuTXcRm31bddFTG6tG1dboOh76Rt2zxE1SCux5v/m4desdN7Id7inZAQXnY6A8jKEokJbNxqY/90Nv7N6WdytxRIz6PqnRPn3VjVVmXE9AV1H964jajqDd2TiuaaBPFzgM9O1Z0GrS/ACTI01GiwNggerlXeezEtnLQKnTBNOE+wgahsg8CBaGKDyIFNUuGVAOjqIIgLL518iLNJ7YBOn4I2UYeVVx/c31pSf0LKR/7d8UbfX0oBIFrpOhcpQ4DKCGB5qdeqzKA91OPV7lDLUB7DNS3CGcAyUJzCf8ACNwORLCZKj2gyg5ilIAlAJ3AYIwJe4GBGBEgt4Q8v+wIQiKu3lB6hnu6gVhkJkc8IdAphRIjUBGe0hOYCynB7YXOTISrJzHiLxos/6PcHJxWkTuDBCP0cmlnttvN0Jb1Trs9sdIRBp5dvCKfLHS2E+ft2z57Fy2TiYyVvKyFHnJU1Zm8/wTFvahvg=="
+    -- luacheck: pop
+}
+
+local starting_technologies = {
+    ["default"] = {
+        "construction-robotics",
+        "logistic-robotics",
+        "logistic-system",
+    }
+}
+
+--- @type EquipmentItem[]
+local bot_spawner_equipment = {
+    { x = 0, y = 0, item = "personal-roboport-mk2-equipment" },
+    { x = 0, y = 2, item = "personal-roboport-mk2-equipment" },
+    { x = 2, y = 0, item = "personal-roboport-mk2-equipment" },
+    { x = 2, y = 2, item = "personal-roboport-mk2-equipment" },
+    { x = 0, y = 4, item = "battery-mk2-equipment"},
+    { x = 1, y = 4, item = "battery-mk2-equipment"},
+    { x = 2, y = 4, item = "battery-mk2-equipment"},
+    { x = 3, y = 4, item = "battery-mk2-equipment"},
+    { x = 4, y = 0, item = "battery-mk2-equipment"},
+    { x = 4, y = 2, item = "battery-mk2-equipment"},
+    { x = 4, y = 4, item = "battery-mk2-equipment"},
+}
+
+local bot_spawner_extra_items = {
+    { name = "construction-robot", count = 100 },
+}
+
+local planet_gifts = {
+    ["default"] = {},
+    ["fulgora"] = {
+        { name = "lightning-rod", count = 10 },
+    }
+}
+
+--- @class MiscSettings
+--- @field water_replace_tile table<planet:string, string>
+--- @field initial_pod_item string
+--- @field bot_spawner_prototype string
+--- @field bot_spawner_offset table<x:number, y:number>
+--- @field bot_spawner_random_offset table<min:table<x:number, y:number>, max:table<x:number, y:number>>
+--- @field bot_spawner_phase_capacity_bonus number
+--- @field bot_spawner_fuel table<name:string>
+--- @field construction_robot string
+--- @field technology_clears_main_roboport string A technology which allows the main roboport to be mined or destroyed
+---                                               without triggering end game
+
+local misc_settings = {
+    water_replace_tile = {
+        ["default"] = "dirt-3",
+        ["nauvis"] = "dirt-3",
+        ["fulgora"] = "fulgoran-sand",
+        ["vulcanus"] = "volcanic-ash-light",
+        ["gleba"] = "midland-cracked-lichen-dull",
+        ["aquilo"] = "snow-flat",
+    },
+    meltable_replace_tile = {
+        ["default"] = "concrete",
+    },
+    initial_pod_item = "tank",
+    bot_spawner_prototype = "tank",
+    bot_spawner_offset = { x = 0, y = -4 },
+    bot_spawner_random_offset = {
+        min = { x = -4, y = -4},
+        max = { x = 4, y = 0}}, -- y > 0 will obstruct ghosts
+    bot_spawner_phase_capacity_bonus = 9,
+    -- hides out of fuel alert
+    bot_spawner_fuel = {name = "coal"},
+    construction_robot = "construction-robot",
+    technology_clears_main_roboport = {
+        ["default"] = "tank"
+    },
+}
+
+local config = {
+    default_quick_bar_slots = default_quick_bar_slots,
+    starting_inventory = starting_inventory,
+    starting_blueprints = starting_blueprints,
+    starting_technologies = starting_technologies,
+    bot_spawner_equipment = bot_spawner_equipment,
+    bot_spawner_extra_items = bot_spawner_extra_items,
+    planet_gifts = planet_gifts,
+    misc_settings = misc_settings,
+}
+
+local landing_states = {
+    initial = "initial",
+    events = {
+        { name = "prepare", from = {"initial", "inactive"}, to = "ready" },
+        -- Used only after the planet was already discovered by the force
+        { name = "clear", from = "ready", to = "clearing" },
+        { name = "launch", from = {"ready", "clearing"}, to = "launching" },
+        { name = "ascend", from = "launching", to = "ascending" },
+        { name = "ascended", from = "ascending", to = "descending" },
+        { name = "land", from = "descending", to = "landed" },
+        { name = "stage", from = "landed", to = "staging"},
+        { name = "build", from = "staging", to = "constructing" },
+        { name = "finalize", from = "constructing", to = "finalizing" },
+        { name = "deactivate", from = "finalizing", to = "inactive" },
+        -- I thought of adding "finished" as a definitely final state
+        -- but that seemed unnecessarily restrictive
+        { name = "invalidate", from = "*", to = "invalid" },
+        { name = "revalidate", from = "invalid", to = "inactive"},
+    }
+}
+
+local launch_common = {
+    "inventory",
+    "platform_index",
+    "landing_location",
+    "destination",
+    "launch_type",
+    "extra_tile_ghosts"}
+local rest_common = {
+    "blueprint_inventory",
+    "player_index",
+    "player_blueprint",
+    unpack(launch_common)}
+local begin_common = {
+    "cargo_pod",
+    unpack(rest_common)}
+local valid_keys = {
+    landing = {
+        _all = {"state", "time"},
+        initial = {"blueprint_inventory", "player_blueprint", unpack(launch_common)},
+        inactive = {"blueprint_inventory", "player_blueprint", unpack(launch_common)},
+        ready = begin_common,
+        clearing = begin_common,
+        launching = begin_common,
+        ascending = begin_common,
+        descending = begin_common,
+        landed = {"awarded_capacity_bonus", "bot_spawner", unpack(rest_common)},
+        staging = {"awarded_capacity_bonus", "bot_spawner", unpack(rest_common)},
+        constructing = {"awarded_capacity_bonus", "bot_spawner", unpack(rest_common)},
+    }
+}
+-- allows identity comparison
+local ticking_spec = {"nth_tick", "handle_ticking", TICKING_TICKS}
+local state_subs = {
+    launching = { { defines.events.on_cargo_pod_started_ascending, "handle_ascending_pods" } },
+    ascending = { { defines.events.on_cargo_pod_finished_ascending, "handle_ascended_pods" } },
+    descending = { { defines.events.on_cargo_pod_finished_descending, "handle_descended_pods" } },
+    landed = { ticking_spec },
+    staging = { ticking_spec },
+    constructing = { ticking_spec,
+                     { defines.events.script_raised_revive, "materialize_items" },
+                     { defines.events.script_raised_revive, "handle_construction" },
+                     { defines.events.on_built_entity, "handle_construction" },
+                     { defines.events.on_robot_built_entity, "handle_construction" } },
+    finalizing = { ticking_spec },
+}
+
+local function validate_keys(what, against, from)
+    local _all = against._all
+    local keys = against[from] or {}
+    for key in pairs(what) do
+        for i=1,#_all do
+            if key == _all[i] then
+                goto skip
+            end
+        end
+        for i=1,#keys do
+            if key == keys[i] then
+                goto skip
+            end
+        end
+        bnwutil.raise_error("key: " .. key .. " should be cleaned up after state: " .. from, against)
+        ::skip::
     end
-    -- disable light
-    player.disable_flashlight()
-    -- enable cheat mode
-    player.cheat_mode = true
+end
 
-    local seablock_enabled = game.active_mods["SeaBlock"] and true or false
+local function manage_subs(from, to)
+    local from_subs, to_subs = state_subs[from] or {}, state_subs[to] or {}
+    local pending_unsub = {unpack(from_subs)}
+    for j=1,#to_subs do
+        local to_sub = to_subs[j]
+        for i=1,#pending_unsub do
+            local unsub = pending_unsub[i]
+            if (unsub == to_sub) then
+                pending_unsub[i] = false
+                goto skip
+            end
+        end
+        wiretap:subscribe(to_sub[1], to_sub[2], BnwForce.count(), to_sub[3])
+        ::skip::
+    end
+    for i=1,#pending_unsub do
+        if pending_unsub[i] then
+            wiretap:unsubscribe(unpack(pending_unsub[i]))
+        end
+    end
+end
 
-    local default_qb_slots = get_default_qb_slots(seablock_enabled)
+local launch_callbacks = {
+    onstatechange = function(_, event, from, to, force_name)
+        manage_subs(from, to)
+        local bnw_force = BnwForce.get(force_name)
+        validate_keys(bnw_force.bnw.landing, valid_keys.landing, from)
+        bnw_force.bnw.landing.time = game.tick
+        log(serpent.block({event = event, from = from, to = to, force = force_name}))
+        --game.print(serpent.block({event = event, from = from, to = to, force = force_name}))
+    end,
+    onenterready = function(_, _, _, _, force_name)
+        local bnw_force = BnwForce.get(force_name)
+        bnw_force:prepare_landing()
+        if bnw_force:launch_type() == "platform" then
+            bnw_force:stash_items()
+        end
+    end,
+    onenterclearing = function(_, _, _, _, force_name)
+        local bnw_force = BnwForce.get(force_name)
+        bnw_force:clear_landing_zone()
+    end,
+    onenterascending = function(_, _, _, _, force_name)
+        local bnw_force = BnwForce.get(force_name)
+        bnw_force:fast_forward_voyage()
+    end,
+    onenterstaging = function(_, _, _, _, force_name)
+        local bnw_force = BnwForce.get(force_name)
+        bnw_force:stage()
+    end,
+    onafterstage = function(_, _, _, _, force_name)
+        local bnw_force = BnwForce.get(force_name)
+        bnw_force:clear_pod()
+    end,
+    onenterconstructing = function(_, _, _, _, force_name)
+        local bnw_force = BnwForce.get(force_name)
+        bnw_force:create_ghosts()
+    end,
+    onleaveconstructing = function(_, _, _, _, force_name)
+        local bnw_force = BnwForce.get(force_name)
+        if bnw_force:launch_type() == "platform" then
+            bnw_force:clear_launch_items()
+        end
+    end,
+    onbeforefinalize = function(_, _, _, _, force_name)
+        local bnw_force = BnwForce.get(force_name)
+        local finished, success = bnw_force:await_construction()
+        if not success then
+            bnw_force:trigger("invalidate")
+        end
+        return finished
+    end,
+    onenterfinalizing = function(_, _, _, _, force_name)
+        local bnw_force = BnwForce.get(force_name)
+        script.raise_event(FORCE_FINISHED_STARTUP_EVENT, {
+            name = FORCE_FINISHED_STARTUP_EVENT,
+            tick = game.tick,
+            force_name = force_name,
+            home = bnw_force.bnw.home,
+        })
+        bnw_force:deactivate()
+    end,
+    onenterinvalid = function(_, _, from, _, force_name)
+        game.print("Error: force " .. force_name ..": encountered invalid state in " .. from)
+        game.print("Please, reload previous save")
+        script.raise_event(FORCE_INVALIDATED_EVENT, {
+            name = FORCE_INVALIDATED_EVENT,
+            tick = game.tick,
+            force_name = force_name})
+    end
+}
+
+
+wiretap:register_listener("handle_ascending_pods", function(event)
+    local cargo_pod = event.cargo_pod
+    if not (cargo_pod and cargo_pod.valid) then return end
+    for force_name, force_data in pairs(storage.forces) do
+        if cargo_pod == force_data.landing.cargo_pod then
+            local bnw_force = BnwForce.get(force_name)
+            bnw_force:trigger("ascend")
+        end
+    end
+end)
+
+wiretap:register_listener("handle_ascended_pods", function(event)
+    local cargo_pod = event.cargo_pod
+    if not (cargo_pod and cargo_pod.valid) then return end
+    for force_name, force_data in pairs(storage.forces) do
+        if force_data.landing.cargo_pod == cargo_pod then
+            local bnw_force = BnwForce.get(force_name)
+            bnw_force:trigger("ascended")
+        end
+    end
+end)
+
+wiretap:register_listener("handle_descended_pods", function(event)
+    local cargo_pod = event.cargo_pod
+    if not (cargo_pod and cargo_pod.valid) then return end
+    for force_name, force_data in pairs(storage.forces) do
+        if force_data.landing.cargo_pod == cargo_pod then
+            local bnw_force = BnwForce.get(force_name)
+            bnw_force:trigger("land")
+        end
+    end
+end)
+
+script.on_event(defines.events.on_cargo_pod_delivered_cargo, function(event)
+    local cargo_pod = event.cargo_pod
+    if not (cargo_pod and cargo_pod.valid) then return end
+    for _, force_data in pairs(storage.forces) do
+        if force_data.landing.cargo_pod == cargo_pod then
+            force_data.landing.cargo_pod = event.spawned_container
+        end
+    end
+end)
+
+wiretap:register_listener("handle_ticking", function()
+    for force_name in pairs(storage.forces) do
+        local bnw_force = BnwForce.get(force_name)
+        local elapsed = game.tick - bnw_force.bnw.landing.time
+        if bnw_force:is("landed") and elapsed > TICKS_LANDED_WAIT then
+            bnw_force:trigger("stage")
+        elseif bnw_force:is("staging") and elapsed > TICKS_STAGING_WAIT then
+            bnw_force:trigger("build")
+        elseif bnw_force:is("constructing") and elapsed > TICKS_CONSTRUCTION_WAIT then
+            bnw_force:trigger("finalize")
+        elseif bnw_force:is("finalizing") and elapsed > TICKS_POST_CONSTRUCTION_WAIT then
+            bnw_force:trigger("deactivate")
+        end
+    end
+end)
+
+local function create_control_room()
+    local mgs = {
+        width = 32,
+        height = 32,
+    }
+    local surface = game.create_surface(CONTROL_ROOM_SURFACE, mgs)
+    surface.generate_with_lab_tiles = true
+    surface.show_clouds = false
+    surface.create_global_electric_network()
+    surface.freeze_daytime = true
+    surface.no_enemies_mode = true
+    surface.request_to_generate_chunks({0, 0}, 1)
+    surface.force_generate_chunk_requests()
+
+    storage.control_room = surface
+    local silo = surface.create_entity{
+        name = "rocket-silo",
+        position = {0, 0},
+        force = "neutral"}
+    silo.destructible = false
+    silo.minable_flag = false
+    storage.neutral_launcher = silo
+
+    local pod = surface.create_entity{
+        name = "cargo-pod-container",
+        surface = surface,
+        force = "neutral",
+        position = {-11.5, -11.5}}
+    local inventory = pod.get_inventory(defines.inventory.chest)
+    inventory.insert({name = "blueprint"})
+    storage.preview_pod = pod
+
+
+    script.on_nth_tick(300, function()
+        local asteroids = surface.find_entities_filtered{force = "enemy"}
+        for _, steroid in ipairs(asteroids) do
+            steroid.die()
+        end
+    end)
+    return surface
+end
+
+wiretap:register_listener("handle_construction", function(event)
+    if not event.tags or event.tags[TAG_STARTING_STRUCTURE] == nil then
+        return
+    end
+
+    local entity = event.entity
+    if not (entity and entity.valid) then return end
+    if entity.electric_buffer_size ~= nil then
+        entity.energy = entity.electric_buffer_size
+    end
+    if entity.type == "roboport" then
+        if event.tags[TAG_STARTING_ROBOPORT] ~= nil then
+            storage.forces[entity.force.name].roboport = entity
+            entity.minable_flag = false
+        end
+        if event.tags[TAG_FIRST_ROBOPORT] ~= nil then
+            bnwutil.fill_entity_proxy_request(entity)
+        end
+    end
+end)
+
+wiretap:register_listener("materialize_items", function(event)
+    if not event.tags or event.tags[TAG_STARTING_STRUCTURE] == nil then
+        return
+    end
+
+    if not (event.entity and event.entity.valid) then return end
+    bnwutil.fill_entity_proxy_request(event.entity)
+end)
+
+local function create_debug_platform(force, planet)
+    local platform = force.create_space_platform{planet = planet, starter_pack = "space-platform-starter-pack"}
+
+    platform.apply_starter_pack()
+    local surface = platform.surface;
+
+    surface.no_enemies_mode = true
+
+    script.on_nth_tick(300, function()
+        local asteroids = storage.platform.surface.find_entities_filtered{force = "enemy"}
+        for _, steroid in ipairs(asteroids) do
+            steroid.die()
+        end
+    end)
+
+    storage.platform = platform
+    return platform
+end
+
+script.on_event(defines.events.on_player_changed_surface, gui.handle_hiding_gui)
+
+script.on_event(defines.events.on_player_died, gui.handle_hiding_gui)
+
+script.on_event(defines.events.on_player_left_game, gui.handle_hiding_gui)
+
+script.on_event(defines.events.on_player_controller_changed, gui.handle_hiding_gui)
+
+script.on_event(defines.events.on_gui_closed, function(event)
+    local player = game.get_player(event.player_index)
+    local el = event.element
+    if el and el.valid and el.name == MOD_PREFIX .. GUI_NAME then
+        gui.hide_colonization_gui(player, event.tick, event.name)
+    elseif not player.opened then
+        local colonization_gui = player.gui.screen[MOD_PREFIX .. GUI_NAME]
+        if colonization_gui
+                and colonization_gui.valid
+                and colonization_gui.visible then
+            player.opened = colonization_gui
+        end
+    end
+end)
+
+script.on_event(defines.events.on_player_removed, function(event)
+    BnwForce.remove_player(event.player_index)
+    storage.players[event.player_index] = nil
+end)
+
+script.on_event(defines.events.on_gui_opened, function(event)
+    if event.entity and event.entity.valid then
+        if event.entity == storage.neutral_launcher then
+            local player = game.get_player(event.player_index)
+            if not (player and player.valid) then return end
+            local bnw_force = BnwForce.get(player.force.name)
+            local zoom = player.zoom
+            player.set_controller{
+                type = defines.controllers.remote,
+                position = bnw_force.bnw.home.position,
+                surface = bnw_force.bnw.home.surface}
+            player.zoom = zoom
+        elseif event.entity and event.entity.prototype.type == "space-platform-hub" then
+            local player = game.get_player(event.player_index)
+            gui.ensure_button_gui_exists(player)
+        end
+    elseif event.gui_type == defines.gui_type.blueprint_library then
+        -- Opening blueprint library won't close the GUI
+        local player = game.get_player(event.player_index)
+        local player_info = storage.players[event.player_index]
+        if player_info
+                and event.tick == player_info.launch_gui_closed_tick
+                and player_info.launch_gui_closed_reason == defines.events.on_gui_closed then
+            gui.show_colonization_gui(player, true)
+        end
+    end
+end)
+
+script.on_event(defines.events.on_string_translated, gui.handle_translation)
+
+wiretap:register_listener("handle_refresh_inventory", gui.handle_refresh_inventory)
+
+script.on_event(defines.events.on_gui_click, function(event)
+    local button = event.element
+    local player = game.get_player(event.player_index)
+    if not player or not player.valid then return end
+
+    if button.name == MOD_PREFIX .. "launch-colonization-pod" then
+        gui.handle_launch_button(player, button, event)
+    elseif button.name == MOD_PREFIX .. "item-button" then
+        gui.handle_blueprint_button(player, button, event)
+    elseif button.name == MOD_PREFIX .. "open-colonization-gui" then
+        gui.show_colonization_gui(player)
+    elseif button.name == MOD_PREFIX .. "close-colonization-gui" then
+        gui.hide_colonization_gui(player)
+    end
+end)
+
+script.on_event(defines.events.on_player_locale_changed, function(event)
+    local player = game.get_player(event.player_index)
+    if player and player.valid then
+        local gui = player.gui.screen[MOD_PREFIX .. GUI_NAME]
+        local gui_button = player.gui.screen[MOD_PREFIX .. GUI_OPEN_NAME]
+        if gui and gui.valid then
+            gui.destroy()
+        end
+        if gui_button and gui_button.valid then
+            gui_button.destroy()
+        end
+        gui.create_guis_for_player(player)
+    end
+end)
+
+local function initialize_objects()
+    if not storage.control_room then
+        create_control_room()
+    end
+end
+
+--- @param o CreateForceOptions
+local function create_force_with_player(o)
+    local force = assert(o.force)
+    local player = o.player
+    local home = assert(o.home)
+    local control_room = assert(o.control_room)
+    local launch_type = assert(o.launch_type)
+    gui.create_guis_for_player(player)
+    local bnw_force = BnwForce.create{
+        force = force,
+        landing_states = landing_states,
+        launch_callbacks = launch_callbacks,
+        home = home,
+        control_room = control_room}
+
+    if player then
+        log("Created bnw force: " .. force.name
+                .. " with player: " .. player.name
+                .. " data: " .. serpent.block(bnw_force.bnw))
+    else
+        log("Created bnw force: " .. force.name
+                .. " with data: " .. serpent.block(bnw_force.bnw))
+    end
+    local debug_platform = "aquilo" and nil
+    if bnw_force:is("initial") and not debug_platform then
+        bnw_force:set_destination{
+            use_offset = true,
+            randomize_offset = true,
+            launch_type = launch_type}
+        if player then
+            bnw_force:stash_player_character(player)
+            bnw_force:player_cutscene(player)
+        end
+        bnw_force:create_pod(storage.neutral_launcher)
+    elseif debug_platform then
+        if player then
+            bnw_force:stash_player_character(player, defines.controllers.remote)
+        end
+        create_debug_platform(force, debug_platform)
+    end
+end
+
+
+local function on_player_created(event)
+    local player = game.get_player(event.player_index)
+    local surface = player.surface
+    if not storage.init_ran then
+        storage.init_ran = true
+        surface.daytime = 0.7
+        initialize_objects()
+    end
+
+    if not storage.setup_force_on_player_create then
+        return
+    end
+
+    create_force_with_player{
+        force = player.force,
+        player = player,
+        home = { position = player.force.get_spawn_position(surface), surface = surface.name },
+        control_room = {position = {4, 4}, surface = storage.control_room.name},
+        launch_type = "initial"}
+
+
+    -- TODO: Handle cutscene during the startup sequence
+
+    local qb_slots = bnwutil.get_planet_config(storage.config.default_quick_bar_slots, player.surface)
 
     -- Set-up a sane default for the quickbar
-    for i = 1, 100 do
+    for i, qb_slot in pairs(qb_slots) do
         if not player.get_quick_bar_slot(i) then
-            if default_qb_slots[i] then
-                player.set_quick_bar_slot(i, default_qb_slots[i])
+            if qb_slot then
+                player.set_quick_bar_slot(i, qb_slot)
             end
         end
     end
+end
 
-    global.bnw_scenario_version = game.active_mods["brave-new-world"]
-    -- setup force
-    setupForce(player.force, player.surface, 0, 0, seablock_enabled)
-    preventMining(player)
+if storage.init_ran or not script.active_mods["any-planet-start"] then
+    script.on_event(defines.events.on_player_created, on_player_created)
+else
+    script.on_event("aps-post-init", function()
+        for player_index in pairs (game.players) do
+            on_player_created({player_index = player_index})
+        end
+        script.on_event("aps-post-init", nil)
+        script.on_event(defines.events.on_player_created, on_player_created)
+    end)
+end
+
+script.on_init(function()
+    storage.forces = {}
+    storage.subscribed_events = {}
+    storage.players = {}
+    storage.config = config
+    storage.setup_force_on_player_create = true
+    storage.pod_inventory_size = 10
+    if remote.interfaces["freeplay"] then
+        freeplay.on_init()
+        remote.call("freeplay", "set_disable_crashsite", true)
+    end
+    wiretap:init()
 end)
 
-script.on_configuration_changed(function(chgdata)
-    local new = game.active_mods["brave-new-world"]
+script.on_load(function()
+    wiretap:load()
+    for force_name, data in pairs(storage.forces) do
+        BnwForce.load{
+            name = force_name,
+            data = data,
+            landing_states = landing_states,
+            launch_callbacks = launch_callbacks}
+    end
+end)
+
+script.on_configuration_changed(function(data)
+    local new = data.mod_changes["bravest-new-world"].new_version
     if new ~= nil then
-        local old = global.bnw_scenario_version
+        local old = storage.scenario_version
         if old ~= new then
             game.reload_script()
-            global.bnw_scenario_version = new
+            storage.scenario_version = new
         end
     end
 end)
-
-script.on_event(defines.events.on_player_pipette, function(event)
-    if global.creative then
-        return
-    end
-    game.players[event.player_index].cursor_stack.clear()
-    game.players[event.player_index].cursor_ghost = event.item
-end)
-
-script.on_event(defines.events.on_player_crafted_item, function(event)
-    if global.creative then
-        return
-    end
-    game.players[event.player_index].cursor_ghost = event.item_stack.prototype
-    event.item_stack.count = 0
-end)
-
-script.on_event(defines.events.on_player_main_inventory_changed, inventoryChanged)
 
 script.on_event(defines.events.on_player_cursor_stack_changed, function(event)
-    if global.creative then
-        return
-    end
-    local player = game.players[event.player_index]
-    local cursor = player.cursor_stack
-    if cursor and cursor.valid_for_read then
-        local allowed = itemCountAllowed(cursor.name, cursor.count, player)
-        local to_remove = cursor.count - allowed
-        if to_remove > 0 then
-            dropItems(player, cursor.name, to_remove)
-            if allowed > 0 then
-                cursor.count = allowed
-            else
-                player.cursor_ghost = cursor.prototype
-                player.cursor_stack.clear()
-            end
-        end
-    end
+    local player = game.get_player(event.player_index)
+    if not (player and player.valid) then return end
     -- check if user is in trouble due to insufficient storage
     local alerts = player.get_alerts{type = defines.alert_type.no_storage}
     local out_of_storage = false
@@ -519,13 +748,15 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(event)
         for _, alert_type in pairs(surface) do
             for _, alert in pairs(alert_type) do
                 local entity = alert.target
-                if (entity.name == "bnw-homeworld-construction-robot") or (entity.name == "construction-robot") then
+                if entity and entity.type == "construction-robot" then
                     out_of_storage = true
                     local inventory = entity.get_inventory(defines.inventory.robot_cargo)
                     if inventory then
-                        for name, count in pairs(inventory.get_contents()) do
-                            entity.surface.spill_item_stack(entity.position, {name = name, count = count})
-                        end
+                        entity.surface.spill_inventory{
+                            position = entity.position,
+                            inventory = inventory,
+                            allow_belts = false,
+                            max_radius = 10}
                     end
                     entity.clear_items_inside()
                 end
@@ -537,52 +768,229 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(event)
     end
 end)
 
+-- TODO: Handle force merging
+
 script.on_event(defines.events.on_entity_died, function(event)
-    if global.creative then
-        return
-    end
     local entity = event.entity
+    if not (entity and entity.valid) then return end
     -- check if roboport was destroyed
-    local config = global.forces[entity.force.name]
-    if config and entity == config.roboport then
-        game.set_game_state{game_finished = true, player_won = false, can_continue = false}
+    local data = storage.forces[entity.force.name]
+    if data and entity == data.roboport then
+        if remote.interfaces["creative-mode"] and remote.call("creative-mode", "is_enabled") then
+            return
+        end
+        game.set_game_state{
+            game_finished = true,
+            player_won = false,
+            can_continue = false}
+    end
+end, {{ filter = "type", type = "roboport" }})
+
+script.on_event(defines.events.on_research_finished, function(event)
+    local tech = event.research
+    local force = tech.force
+    local force_info = storage.forces[force.name]
+    if force_info then
+        local surface = game.get_surface(force_info.home.surface)
+        local tech_setting = storage.config.misc_settings.technology_clears_main_roboport
+        if tech.name == bnwutil.get_planet_config(tech_setting, surface) then
+            if force_info.roboport and force_info.roboport.valid then
+                force_info.roboport.minable_flag = true
+                force_info.roboport = nil
+            end
+        end
     end
 end)
 
-script.on_event(defines.events.on_player_changed_position, function(event)
-    if global.creative then
+script.on_event(defines.events.on_forces_merging, function(event)
+    local force = event.force
+    local force_info = storage.forces[force.name]
+    if force_info then
+        force_info.home.force = force
+    end
+end)
+
+local function draw_blueprint(direction)
+    local player = game.player;
+    local blueprint = bnwutil.get_selected_blueprint(player)
+    if not blueprint or (blueprint.object_name == "LuaRecord" and blueprint.is_preview) then
         return
     end
-    local player = game.players[event.player_index]
-    -- TODO: really shouldn't have to do this so often (can we do it in migrate function?)
-    preventMining(player)
+    bnwutil.get_blueprint_bounding_box(blueprint, player.position, direction or defines.direction.north, player.surface)
+end
 
-    local config = global.forces[player.force.name]
-    local x_chunk = math.floor(player.position.x / 32)
-    local y_chunk = math.floor(player.position.y / 32)
-    -- prevent player from exploring, unless in a vehicle
-    if not player.vehicle then
-        local charted = function(x, y)
-           return player.force.is_chunk_charted(player.surface, {x, y}) and
-              (player.force.is_chunk_charted(player.surface, {x - 2, y - 2}) or not player.surface.is_chunk_generated({x - 2, y - 2})) and
-              (player.force.is_chunk_charted(player.surface, {x - 2, y + 2}) or not player.surface.is_chunk_generated({x - 2, y + 2})) and
-              (player.force.is_chunk_charted(player.surface, {x + 2, y - 2}) or not player.surface.is_chunk_generated({x + 2, y - 2})) and
-              (player.force.is_chunk_charted(player.surface, {x + 2, y + 2}) or not player.surface.is_chunk_generated({x + 2, y + 2}))
-        end
-        if not charted(math.floor(player.position.x / 32), math.floor(player.position.y / 32)) then
-            -- can't move here, chunk not charted
-            local prev_pos = global.players[event.player_index].previous_position
-            if charted(math.floor(player.position.x / 32), math.floor(prev_pos.y / 32)) then
-                -- we can move here, though
-                prev_pos.x = player.position.x
-            elseif charted(math.floor(prev_pos.x / 32), math.floor(player.position.y / 32)) then
-                -- or here
-                prev_pos.y = player.position.y
-            end
-            -- teleport player to (possibly modified) prev_pos
-            player.teleport(prev_pos)
-        end
+remote.add_interface(MOD_PREFIX .. "debug", {
+    list = function() return storage.subscribed_events end,
+    players = function() return storage.players end,
+    landing = function()
+        return game.player and storage.forces[game.player.force.name].landing or error("Console only")
+    end,
+    draw_blueprint = draw_blueprint,
+})
+
+local config_interface = {
+    --- @return table<planet:string, table<slot:number, string>>
+    get_default_quick_bar_slots = function()
+        return storage.config.default_quick_bar_slots
+    end,
+    --- @param slots table<planet:string, table<slot:number, string>>
+    set_default_quick_bar_slots = function(slots)
+        storage.config.default_quick_bar_slots = slots or error("Only accepts table")
+    end,
+    --- @return table<planet:string, table<inventory:string, InventoryItem[]>>
+    get_starting_inventory = function()
+        return storage.config.starting_inventory
+    end,
+    --- @param inv table<planet:string, table<inventory:string, InventoryItem[]>>
+    set_starting_inventory = function(inv)
+        storage.config.starting_inventory = inv or error("Only accepts table")
+    end,
+    --- @return table<planet:string, string>
+    get_starting_blueprints = function()
+        return storage.config.starting_blueprints
+    end,
+    --- @param blueprints table<planet:string, string>
+    set_starting_blueprints = function(blueprints)
+        storage.config.starting_blueprints = blueprints or error("Only accepts table")
+    end,
+    --- @return table<planet:string, string>
+    get_starting_technologies = function()
+        return storage.config.starting_technologies
+    end,
+    --- @param technologies table<planet:string, string>
+    set_starting_technologies = function(technologies)
+        storage.config.starting_technologies = technologies or error("Only accepts table")
+    end,
+    --- @return EquipmentItem[]
+    get_bot_spawner_equipment = function()
+        return storage.config.bot_spawner_equipment
+    end,
+    --- @param equipment EquipmentItem[]
+    set_bot_spawner_equipment = function(equipment)
+        storage.config.bot_spawner_equipment = equipment or error("Only accepts table")
+    end,
+    --- @return InventoryItem[]
+    get_bot_spawner_extra_items = function()
+        return storage.config.bot_spawner_extra_items
+    end,
+    --- @param items InventoryItem[]
+    set_bot_spawner_extra_items = function(items)
+        storage.config.bot_spawner_extra_items = items or error("Only accepts table")
+    end,
+    --- @return table<planet:string, table<inventory:string, InventoryItem[]>>
+    get_planet_gifts = function()
+        return storage.config.planet_gifts
+    end,
+    --- @param gifts table<planet:string, table<inventory:string, InventoryItem[]>>
+    set_planet_gifts = function(gifts)
+        storage.config.planet_gifts = gifts or error("Only accepts table")
+    end,
+    --- @return MiscSettings
+    get_misc_settings = function()
+        return storage.config.misc_settings
+    end,
+    --- @param settings MiscSettings
+    set_misc_settings = function(settings)
+        storage.config.misc_settings = settings or error("Only accepts table")
     end
-    -- save new player position
-    global.players[event.player_index].previous_position = player.position
-end)
+}
+
+remote.add_interface("bravest-new-world-scenario-config", config_interface)
+
+local runtime_interface = {
+    --- @return string
+    get_interface_version = function()
+        return "0.1"
+    end,
+    --- @return LuaSurface
+    get_control_room = function()
+        return storage.control_room
+    end,
+    --- @param surface LuaSurface
+    set_control_room = function(surface)
+        if surface.object_name ~= "LuaSurface"
+                or not surface
+                or not surface.valid then
+            error("Only accepts valid surface")
+        end
+        storage.control_room = surface
+    end,
+    get_neutral_launcher = function()
+        return storage.neutral_launcher
+    end,
+    --- @param launcher LuaEntity
+    set_neutral_launcher = function(launcher)
+        if not launcher
+                or launcher.object_name ~= "LuaEntity"
+                or not launcher.valid
+                or (launcher.type ~= "rocket-silo"
+                and launcher.type ~= "space-platform-hub") then
+            error("Only accepts rocket-silo or space-platform-hub")
+        end
+        storage.neutral_launcher = launcher
+    end,
+    --- @return LuaEntity
+    get_preview_pod = function()
+        return storage.preview_pod
+    end,
+    --- @param pod LuaEntity
+    set_preview_pod = function(pod)
+        if not pod
+                or pod.object_name ~= "LuaEntity"
+                or not pod.valid then
+            error("Only accepts LuaEntity")
+        end
+        storage.preview_pod = pod
+    end,
+    --- @return defines.event
+    get_force_finished_startup_event = function()
+        return FORCE_FINISHED_STARTUP_EVENT
+    end,
+    --- @return defines.event
+    get_force_invalidated_event = function()
+        return FORCE_INVALIDATED_EVENT
+    end,
+    --- @param o CreateForceOptions
+    --- @return boolean
+    create_bnw_force = function(o)
+        if not o.force or o.force.object_name ~= "LuaForce" or not o.force.valid then
+            error("Only accepts LuaForce")
+        elseif o.player and (o.player.object_name ~= "LuaPlayer" or not o.player.valid) then
+            error("Only accepts LuaPlayer")
+        elseif not o.home or not o.home.surface
+                or o.home.surface ~= "LuaSurface" or not o.home.position then
+            error("Home must exist")
+        elseif not o.control_room or not o.control_room.surface
+                or o.control_room.surface ~= "LuaSurface" or not o.control_room.position then
+            error("Control room must exist")
+            elseif not (o.launch_type == "initial" or o.launch_type == "launch" or o.launch_type == "creative") then
+            error("Launch type must be \"initial\", \"launch\", or \"creative\"")
+        end
+        create_force_with_player{
+            force = o.force,
+            player = o.player,
+            home = o.home,
+            control_room = o.control_room,
+            launch_type = o.launch_type
+        }
+        return true
+    end,
+    --- Force roboport might get cleared during the gameplay
+    --- @return LuaEntity?
+    get_force_roboport = function(force_name)
+        if BnwForce.exists(force_name) then
+            return BnwForce.get(force_name).roboport
+        end
+        return nil
+    end,
+    --- @return boolean
+    get_setup_force_on_player_create = function()
+        return storage.setup_force_on_player_create
+    end,
+    --- @param bool boolean
+    set_setup_force_on_player_create = function(bool)
+        storage.setup_force_on_player_create = bool
+    end
+}
+
+remote.add_interface("bravest-new-world-scenario-runtime", runtime_interface)

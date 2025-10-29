@@ -1,4 +1,32 @@
 ---------------------------------------------------------------------------------------------------
+Version: 5.0.0
+Date: 29. 10. 2025
+  Features:
+    - Supports Factorio: Space Age
+    - Planet colonization - it is now possible to colonize planets remotely
+    - In-game GUI to set what blueprints will be deployed on the landing site
+    - Creative mode bypasses some launch checks
+    - Launch GUI prevents you from launching unviable blueprints (roboport, storage, power, poles, bots)
+  Changes:
+    - Player character is now stashed away in a control room (very bare bones for now)
+    - Now scenario only, mod version is coming
+    - Removed homeworld robots
+  Modding:
+    - Added modding interface to change configuration
+    - Mods can take control over the launch process
+    - Most item-related configuration is per-planet
+    - NEEDS TESTING
+  Known Issues:
+    - The intro cutscene plays for player 1 only, other players might interfere and break it
+    - Crash when the platform gets destroyed during landing sequence
+    - Losing a planet to the enemies might be losing it permanently (unless you have orbital bombardment)
+    - Crash when modded items get removed from the save during landing sequence
+    - Landing GUI does not show item quality
+    - Landing GUI does not show which items are missing in the blueprint
+    - Landing GUI currently does not support blueprint orientation (only the default orientation)
+    - Landing GUI does not check surface build conditions
+    - Landing GUI does not check whether you have heat source on cold planets (Aquilo)
+---------------------------------------------------------------------------------------------------
 Version: 4.2.0
 Date: 05. 03. 2022
   Changes:
