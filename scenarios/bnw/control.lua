@@ -712,6 +712,7 @@ script.on_init(function()
     if remote.interfaces["freeplay"] then
         freeplay.on_init()
         remote.call("freeplay", "set_disable_crashsite", true)
+        remote.call("freeplay", "set_skip_intro", true)
     end
     wiretap:init()
 end)
