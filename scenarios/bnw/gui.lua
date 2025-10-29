@@ -238,7 +238,15 @@ local function refresh_inventory(player, player_info, root, platform_info)
         end
     end
     local launch_button = root.children[2].children[8].children[2]
-    launch_button.enabled = not not can_launch(player, platform_info)
+    local planet = can_launch(player, platform_info)
+    if planet then
+        local planet_str = "[planet=" .. planet.name .. "]"
+        launch_button.enabled = true
+        launch_button.caption = {"", planet_str, " ", {"gui.rocket-launch"}}
+    else
+        launch_button.enabled = false
+        launch_button.caption = {"gui.rocket-launch"}
+    end
 end
 
 local function create_inventory_gui(o)
