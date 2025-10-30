@@ -594,10 +594,10 @@ end)
 script.on_event(defines.events.on_player_locale_changed, function(event)
     local player = game.get_player(event.player_index)
     if player and player.valid then
-        local gui = player.gui.screen[MOD_PREFIX .. GUI_NAME]
+        local landing_gui = player.gui.screen[MOD_PREFIX .. GUI_NAME]
         local gui_button = player.gui.screen[MOD_PREFIX .. GUI_OPEN_NAME]
-        if gui and gui.valid then
-            gui.destroy()
+        if landing_gui and landing_gui.valid then
+            landing_gui.destroy()
         end
         if gui_button and gui_button.valid then
             gui_button.destroy()
