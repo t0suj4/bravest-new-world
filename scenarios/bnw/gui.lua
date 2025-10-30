@@ -683,10 +683,10 @@ function gui.handle_launch_button(player, _, _)
         use_offset = true,
         randomize_offset = true,
         surface = surface.name,
-        platform = storage.platform,
+        platform = platform_info.platform,
         position = {0, 0},
         launch_type = creative and "creative" or "platform"}
-    bnw_force:create_pod(storage.platform.hub)
+    bnw_force:create_pod(platform_info.platform.hub)
 end
 
 local function clear_blueprint(player, button, launch_platform)

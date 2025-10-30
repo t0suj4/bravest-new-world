@@ -2,6 +2,12 @@
 Version: 5.0.2
 Date: 29. 10. 2025
   Bugfixes:
+    - Fixed crash when trying to land on a planet
+    - Fixed crash when changing unrelated mods
+---------------------------------------------------------------------------------------------------
+Version: 5.0.2
+Date: 29. 10. 2025
+  Bugfixes:
     - Removed pause at startup
 ---------------------------------------------------------------------------------------------------
 Version: 5.0.1
