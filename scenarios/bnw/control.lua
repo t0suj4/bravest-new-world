@@ -729,7 +729,8 @@ script.on_load(function()
 end)
 
 script.on_configuration_changed(function(data)
-    local new = data.mod_changes["bravest-new-world"].new_version
+    local bnw = data.mod_changes["bravest-new-world"]
+    local new = bnw and bnw.new_version or nil
     if new ~= nil then
         local old = storage.scenario_version
         if old ~= new then
