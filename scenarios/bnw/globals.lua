@@ -16,7 +16,7 @@ ROCKET_SEQUENCE_LAUNCH_TIME = 800
 CONTROL_ROOM_SURFACE = "bravest-new-world-control-room"
 GUI_NAME = "deployment-interface"
 GUI_OPEN_NAME = "deployment-open-interface"
-
+GUI_LOCATION_TOOLTIP_NAME = "location-tooltip"
 LANDER_GUI_INNER_WIDTH = 396
 
 FORCE_FINISHED_STARTUP_EVENT = script.generate_event_name()

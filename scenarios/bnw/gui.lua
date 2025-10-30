@@ -592,7 +592,7 @@ function gui.hide_colonization_gui(player, tick, reason)
             player_info.launch_gui_closed_reason = reason
         end
     end
-    if player_info.launch_gui_open == true then
+    if player_info and player_info.launch_gui_open == true then
         player_info.launch_gui_open = false
         wiretap:unsubscribe("nth_tick", "handle_refresh_inventory", 13)
     end
@@ -601,6 +601,7 @@ end
 function gui.handle_hiding_gui(event)
     local player = game.get_player(event.player_index)
     gui.hide_colonization_gui(player, event.tick, event.name)
+    gui.hide_location_tooltip(event.player_index)
 end
 
 -- We need to do this circus, because there is an icon in the translated string
@@ -839,6 +840,118 @@ end
 function gui.create_guis_for_player(player)
     create_open_gui_button(player)
     create_gui(player)
+end
+
+local function create_location_tooltip_gui(player)
+    local root = player.gui.screen
+
+    local tooltip = root[MOD_PREFIX .. GUI_LOCATION_TOOLTIP_NAME]
+    if tooltip then
+        tooltip.destroy()
+    end
+
+    tooltip = root.add{
+        type = "frame",
+        name = MOD_PREFIX .. GUI_LOCATION_TOOLTIP_NAME,
+        direction = "vertical",
+        style = "tooltip_frame"
+    }
+    tooltip.style.bottom_padding = 4
+    tooltip.ignored_by_interaction = true
+
+    local hint = tooltip.add{
+        type = "label",
+        caption = {"gui-text-tags.gps-title"},
+    }
+    hint.style.top_margin = -1
+    hint.style.bottom_margin = 4
+
+    local view = tooltip.add{
+        type = "camera",
+        surface_index = 1,
+        zoom = 0.5,
+        position = {0, 0},
+    }
+    local resolution = player.display_resolution
+    local scale = player.display_scale
+    local denormalized_width = resolution.width / scale
+    local denormalized_height = resolution.height / scale
+    view.style.minimal_width = denormalized_height / 2
+    view.style.minimal_height = denormalized_height / 2
+    view.style.maximal_width = denormalized_width / 4
+    view.style.maximal_height = denormalized_height / 2
+
+    return tooltip
+end
+
+function gui.show_location_tooltip(player, location)
+    local player_info = ensure_player_info_exists(player.index)
+    -- If we're opening the tooltip, it should be closed
+    if player_info.location_tooltip_open == true then
+        gui.hide_location_tooltip(player.index)
+    end
+
+    local surface = game.get_surface(location.surface)
+    if not surface then return end
+    local tooltip = player.gui.screen[MOD_PREFIX .. GUI_LOCATION_TOOLTIP_NAME]
+    if not (tooltip and tooltip.valid) then
+        tooltip = create_location_tooltip_gui(player)
+    end
+    tooltip.visible = true
+    player_info.location_tooltip_open = true
+    local camera = tooltip.children[2]
+    camera.position = location.position
+    camera.surface_index = surface.index
+
+    wiretap:subscribe("nth_tick", "handle_refresh_tooltip", table_size(storage.players), 13)
+end
+
+function gui.hide_location_tooltip(player_index)
+    local player_info = storage.players[player_index]
+    local player = game.get_player(player_index)
+    if player and player.valid then
+        local tooltip = player.gui.screen[MOD_PREFIX .. GUI_LOCATION_TOOLTIP_NAME]
+        if tooltip and tooltip.valid and tooltip.visible then
+            tooltip.visible = false
+        end
+    end
+    if player_info and player_info.location_tooltip_open == true then
+        player_info.location_tooltip_open = false
+        wiretap:unsubscribe("nth_tick", "handle_refresh_tooltip", 13)
+    end
+end
+
+function gui.handle_player_selected_event(event)
+    local player = game.get_player(event.player_index)
+    if not (player and player.valid) then
+        return
+    end
+    if event.last_entity == storage.neutral_launcher then
+        gui.hide_location_tooltip(event.player_index)
+    elseif player.selected == storage.neutral_launcher then
+        assert(player.selected, "Selection should not be empty: " .. player.name)
+        local bnw_force = BnwForce.try_get(player.force.name)
+        if bnw_force then
+            local home = bnw_force.bnw.home
+            if home then
+                gui.show_location_tooltip(player, home)
+            else
+                game.print("Home not found for force: " .. player.force.name)
+            end
+        end
+    end
+end
+
+function gui.handle_refresh_tooltip()
+    for player_index, player_info in pairs(storage.players) do
+        local player = game.get_player(player_index)
+        local should_close = not (player and player.valid
+                and player.gui.screen[MOD_PREFIX .. GUI_LOCATION_TOOLTIP_NAME])
+                or player.selected ~= storage.neutral_launcher
+        if player_info.location_tooltip_open == true and should_close then
+            gui.hide_location_tooltip(player_index)
+        end
+    end
 end
 
 return gui

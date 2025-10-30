@@ -21,6 +21,21 @@ function BnwForce.get(name)
     return f
 end
 
+-- Less strict, but missing force means wrong handling of merge
+function BnwForce.try_get(name)
+    local f = bnw_forces[name]
+    if not f then
+        return nil
+    end
+    if not f.af then
+        f.af = game.forces[name]
+        if not f.af then
+            bnwutil.raise_error("force disappeared: " .. name)
+        end
+    end
+    return f
+end
+
 function BnwForce.exists(name)
     return bnw_forces[name] and true or false
 end

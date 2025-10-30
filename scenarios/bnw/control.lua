@@ -574,6 +574,7 @@ end)
 script.on_event(defines.events.on_string_translated, gui.handle_translation)
 
 wiretap:register_listener("handle_refresh_inventory", gui.handle_refresh_inventory)
+wiretap:register_listener("handle_refresh_tooltip", gui.handle_refresh_tooltip)
 
 script.on_event(defines.events.on_gui_click, function(event)
     local button = event.element
@@ -769,6 +770,8 @@ script.on_event(defines.events.on_player_cursor_stack_changed, function(event)
         player.print({"out-of-storage"})
     end
 end)
+
+script.on_event(defines.events.on_selected_entity_changed, gui.handle_player_selected_event)
 
 -- TODO: Handle force merging
 
