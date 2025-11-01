@@ -515,7 +515,10 @@ local function create_debug_platform(force, planet)
     return platform
 end
 
-script.on_event(defines.events.on_player_changed_surface, gui.handle_hiding_gui)
+script.on_event(defines.events.on_player_changed_surface, function(event)
+    gui.handle_hiding_gui(event)
+    gui.handle_player_selected_event(event)
+end)
 
 script.on_event(defines.events.on_player_died, gui.handle_hiding_gui)
 
