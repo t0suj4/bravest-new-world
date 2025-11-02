@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 5.1.2
+Date: 02. 11. 2025
+  Bugfixes:
+    - Fixed tiles not being placed in some cases
+    - Fixed potential infinite loop when trying to place starting oil
+    - Fixed attempt to research tech during every landing
+---------------------------------------------------------------------------------------------------
 Version: 5.1.1
 Date: 31. 10. 2025
   Bugfixes:

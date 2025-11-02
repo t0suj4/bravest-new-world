@@ -318,7 +318,7 @@ function bnw_util.raise_error(msg, obj1, obj2, obj3)
     if obj3 then
         log(serpent.block(obj3, {valtypeignore = {["function"] = true}}))
     end
-    error(msg)
+    error(msg, 2)
 end
 
 local InsertPlanner = {}

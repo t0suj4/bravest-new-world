@@ -505,9 +505,11 @@ local function create_debug_platform(force, planet)
     surface.no_enemies_mode = true
 
     script.on_nth_tick(300, function()
-        local asteroids = storage.platform.surface.find_entities_filtered{force = "enemy"}
-        for _, steroid in ipairs(asteroids) do
-            steroid.die()
+        if storage.platform and storage.platform.valid then
+            local asteroids = storage.platform.surface.find_entities_filtered{force = "enemy"}
+            for _, steroid in ipairs(asteroids) do
+                steroid.die()
+            end
         end
     end)
 

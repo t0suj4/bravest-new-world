@@ -235,7 +235,7 @@ end
 function BnwForce:check_state_for(event)
     if not self:can(event) then
         local state = self.fsm.landing._state.current
-        bnwutil.raise_error("Force: " .. self.name .. " cannot " .. event .. ", it is " .. state, self.bnw_force)
+        bnwutil.raise_error("Force: " .. self.name .. " cannot " .. event .. ", it is " .. state, self.bnw)
     end
     return self.fsm.landing._state.state
 end
@@ -383,7 +383,7 @@ function BnwForce:clear_launch_items()
     -- TODO: Add fallback behavior
     local inventory = self.bnw.landing.inventory
     if not (inventory and inventory.valid) then
-        error("Expected to find landing inventory")
+        bnwutil.raise_error("Expected to find landing inventory", self.bnw)
     end
     inventory.clear()
     inventory.destroy()
@@ -395,16 +395,16 @@ function BnwForce:clear_launch_items()
     end
     local chest = launch_platform.component_chest
     if not (chest and chest.valid) then
-        error("Could not find construction item container")
+        bnwutil.raise_error("Could not find construction item container", self.bnw)
     end
 
     local chest_inv = chest.get_inventory(defines.inventory.chest)
     if not chest_inv then
-        error("Expected to find chest inventory")
+        bnwutil.raise_error("Expected to find chest inventory", self.bnw)
     end
     local bp_inv = launch_platform.bp_inventory
     if not (bp_inv and bp_inv.valid) then
-        error("Expected to find blueprint inventory")
+        bnwutil.raise_error("Expected to find blueprint inventory", self.bnw)
     end
 
     chest_inv.clear()
@@ -514,7 +514,7 @@ function BnwForce:generate_starting_resources()
     local attempts_remaining = num_oil_patches * 10
     for _ = 1, num_oil_patches do
         ::restart::
-        attempts_remaining = attempts_remaining + 1
+        attempts_remaining = attempts_remaining - 1
         if attempts_remaining <= 0 then
             game.print("Failed to create all resource patches! Only "
                     .. #resource_positions
@@ -559,8 +559,10 @@ function BnwForce:setup_landing_zone()
     local surface = assert(game.get_surface(dest.surface))
     local force = self.af
 
-    for _, tech in pairs(get_planet_config(storage.config.starting_technologies, surface)) do
-        force.technologies[tech].researched = true
+    if self:launch_type() == "initial" then
+        for _, tech in pairs(get_planet_config(storage.config.starting_technologies, surface)) do
+            force.technologies[tech].researched = true
+        end
     end
 
     local blueprint_extent = self.bnw.landing.blueprint_extent
@@ -642,7 +644,7 @@ function BnwForce:place_bot_spawner(surface, position)
     tank.minable_flag = false
 
     if not grid then
-        error("Bot spawner must have a grid")
+        bnwutil.raise_error("Bot spawner must have a grid")
     end
 
     for _, eq in pairs(storage.config.bot_spawner_equipment) do
@@ -660,7 +662,7 @@ function BnwForce:place_bot_spawner(surface, position)
 
     local trunk = tank.get_inventory(defines.inventory.car_trunk)
     if not trunk then
-        error("Expected bot spawner to have trunk")
+        bnwutil.raise_error("Expected bot spawner to have trunk")
     end
     for _, item in pairs(storage.config.bot_spawner_extra_items) do
         trunk.insert(item)
@@ -681,7 +683,7 @@ function BnwForce:place_bot_spawner(surface, position)
         if prototype and prototype.items_to_place_this then
             for _, tile_item in ipairs(prototype.items_to_place_this) do
                 local name = tile_item.name
-                extra_tile_items[name] = (extra_tile_items[name] or 0) + 1
+                extra_tile_items[name] = (extra_tile_items[name] or 0) + tile_item.count
             end
         else
             -- Mod changed tiles, retry with hopefully updated configuration
@@ -708,7 +710,7 @@ function BnwForce:place_bot_spawner(surface, position)
 
     for name, inventory in pairs(get_planet_config(storage.config.starting_inventory, surface)) do
         -- Cannot insert construction robots via requests
-        if string.sub(name, 1, 16) ~= "roboport-robots-" then
+        if not name:find("^roboport%-robots%-") then
             for _, item in pairs(inventory) do
                 trunk.insert(item)
             end
