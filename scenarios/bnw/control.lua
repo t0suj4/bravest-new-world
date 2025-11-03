@@ -321,20 +321,11 @@ local launch_callbacks = {
     onenterstaging = function(_, _, _, _, force_name)
         local bnw_force = BnwForce.get(force_name)
         bnw_force:stage()
-    end,
-    onafterstage = function(_, _, _, _, force_name)
-        local bnw_force = BnwForce.get(force_name)
         bnw_force:clear_pod()
     end,
     onenterconstructing = function(_, _, _, _, force_name)
         local bnw_force = BnwForce.get(force_name)
         bnw_force:create_ghosts()
-    end,
-    onleaveconstructing = function(_, _, _, _, force_name)
-        local bnw_force = BnwForce.get(force_name)
-        if bnw_force:launch_type() == "platform" then
-            bnw_force:clear_launch_items()
-        end
     end,
     onbeforefinalize = function(_, _, _, _, force_name)
         local bnw_force = BnwForce.get(force_name)
@@ -346,6 +337,9 @@ local launch_callbacks = {
     end,
     onenterfinalizing = function(_, _, _, _, force_name)
         local bnw_force = BnwForce.get(force_name)
+        if bnw_force:launch_type() == "platform" then
+            bnw_force:clear_launch_items()
+        end
         script.raise_event(FORCE_FINISHED_STARTUP_EVENT, {
             name = FORCE_FINISHED_STARTUP_EVENT,
             tick = game.tick,
