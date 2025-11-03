@@ -616,4 +616,32 @@ function bnw_util.random_point_outside_box(extent, margin_min, margin_max)
     end
 end
 
+function bnw_util.remote_deepcopy(obj)
+    local lookup_table = {}
+    local invalid_table = {}
+    local function _copy(object)
+        if type(object) == "userdata" and object.valid == false then
+            local invalid_object = invalid_table[object]
+            if invalid_object then
+                return invalid_table
+            else
+                invalid_object = {object_name = object.object_name, valid = false}
+                invalid_table[object] = invalid_object
+                return invalid_object
+            end
+        elseif type(object) ~= "table" then
+            return object
+        elseif lookup_table[object] then
+            return lookup_table[object]
+        end
+        local new_table = {}
+        lookup_table[object] = new_table
+        for index, value in pairs(object) do
+            new_table[_copy(index)] = _copy(value)
+        end
+        return new_table
+    end
+    return _copy(obj)
+end
+
 return bnw_util

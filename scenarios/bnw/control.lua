@@ -837,6 +837,17 @@ remote.add_interface(MOD_PREFIX .. "debug", {
     draw_blueprint = draw_blueprint,
 })
 
+-- Internal use only!!!
+-- DO NOT TOUCH!!!
+remote.add_interface(MOD_PREFIX .. "internal", {
+    ["get-storage"] = function()
+        return bnwutil.remote_deepcopy(storage)
+    end,
+    ["set-storage"] = function(storage_)
+        storage = storage_
+    end
+})
+
 local config_interface = {
     --- @return table<planet:string, table<slot:number, string>>
     get_default_quick_bar_slots = function()
