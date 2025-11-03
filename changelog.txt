@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 5.1.3
+Date: 03. 11. 2025
+  Changes:
+    - Landing construction time is now a tiny little bit shorter
+  Bugfixes:
+    - Fixed random crashes shortly after construction had finished
+    - Fixed gui glitching with paused ticks
+  Modding:
+    - Added force finished landing event, force finished starting is now called only with initial landing
+---------------------------------------------------------------------------------------------------
 Version: 5.1.2
 Date: 02. 11. 2025
   Bugfixes:
