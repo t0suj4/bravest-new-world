@@ -1,6 +1,10 @@
 
 local bnw_util = {}
 
+function bnw_util.assert_arg(var, message, errlevel)
+    return var or error(message, errlevel or 2)
+end
+
 function bnw_util.get_blueprint_bounding_box(blueprint, position, direction, debug_surface)
     if debug_surface then
         rendering.clear()

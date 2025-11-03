@@ -614,12 +614,17 @@ end
 
 --- @param o CreateForceOptions
 local function create_force_with_player(o)
-    local force = assert(o.force)
+    local errlevel = o.errlevel or 2
+    local force = bnwutil.assert_arg(o.force, "force is required", errlevel + 1)
     local player = o.player
-    local home = assert(o.home)
-    local control_room = assert(o.control_room)
-    local launch_type = assert(o.launch_type)
-    gui.create_guis_for_player(player)
+    local home = bnwutil.assert_arg(o.home, "home is required", errlevel + 1)
+    local control_room = bnwutil.assert_arg(o.control_room, "control_room is required", errlevel + 1)
+    local launch_type = bnwutil.assert_arg(o.launch_type, "launch_type is required", errlevel + 1)
+    local valid = force.valid and type(home.surface) == "string" and type(control_room.surface) == "string"
+    bnwutil.assert_arg(valid, "game objects must be valid", errlevel + 1)
+    if player then
+        gui.create_guis_for_player(player)
+    end
     local bnw_force = BnwForce.create{
         force = force,
         landing_states = landing_states,
@@ -673,7 +678,8 @@ local function on_player_created(event)
         player = player,
         home = { position = player.force.get_spawn_position(surface), surface = surface.name },
         control_room = {position = {4, 4}, surface = storage.control_room.name},
-        launch_type = "initial"}
+        launch_type = "initial",
+        errlevel = 2}
 
 
     -- TODO: Handle cutscene during the startup sequence
@@ -772,8 +778,6 @@ end)
 
 script.on_event(defines.events.on_selected_entity_changed, gui.handle_player_selected_event)
 
--- TODO: Handle force merging
-
 script.on_event(defines.events.on_entity_died, function(event)
     local entity = event.entity
     if not (entity and entity.valid) then return end
@@ -829,6 +833,7 @@ remote.add_interface(MOD_PREFIX .. "debug", {
     landing = function()
         return game.player and storage.forces[game.player.force.name].landing or error("Console only")
     end,
+    force = function(force_name) return force_name and storage.forces[force_name] or error("Invalid force name", 3) end,
     draw_blueprint = draw_blueprint,
 })
 
@@ -839,7 +844,7 @@ local config_interface = {
     end,
     --- @param slots table<planet:string, table<slot:number, string>>
     set_default_quick_bar_slots = function(slots)
-        storage.config.default_quick_bar_slots = slots or error("Only accepts table")
+        storage.config.default_quick_bar_slots = slots or error("Only accepts table", 3)
     end,
     --- @return table<planet:string, table<inventory:string, InventoryItem[]>>
     get_starting_inventory = function()
@@ -847,7 +852,7 @@ local config_interface = {
     end,
     --- @param inv table<planet:string, table<inventory:string, InventoryItem[]>>
     set_starting_inventory = function(inv)
-        storage.config.starting_inventory = inv or error("Only accepts table")
+        storage.config.starting_inventory = inv or error("Only accepts table", 3)
     end,
     --- @return table<planet:string, string>
     get_starting_blueprints = function()
@@ -855,7 +860,7 @@ local config_interface = {
     end,
     --- @param blueprints table<planet:string, string>
     set_starting_blueprints = function(blueprints)
-        storage.config.starting_blueprints = blueprints or error("Only accepts table")
+        storage.config.starting_blueprints = blueprints or error("Only accepts table", 3)
     end,
     --- @return table<planet:string, string>
     get_starting_technologies = function()
@@ -863,7 +868,7 @@ local config_interface = {
     end,
     --- @param technologies table<planet:string, string>
     set_starting_technologies = function(technologies)
-        storage.config.starting_technologies = technologies or error("Only accepts table")
+        storage.config.starting_technologies = technologies or error("Only accepts table", 3)
     end,
     --- @return EquipmentItem[]
     get_bot_spawner_equipment = function()
@@ -871,7 +876,7 @@ local config_interface = {
     end,
     --- @param equipment EquipmentItem[]
     set_bot_spawner_equipment = function(equipment)
-        storage.config.bot_spawner_equipment = equipment or error("Only accepts table")
+        storage.config.bot_spawner_equipment = equipment or error("Only accepts table", 3)
     end,
     --- @return InventoryItem[]
     get_bot_spawner_extra_items = function()
@@ -879,7 +884,7 @@ local config_interface = {
     end,
     --- @param items InventoryItem[]
     set_bot_spawner_extra_items = function(items)
-        storage.config.bot_spawner_extra_items = items or error("Only accepts table")
+        storage.config.bot_spawner_extra_items = items or error("Only accepts table", 3)
     end,
     --- @return table<planet:string, table<inventory:string, InventoryItem[]>>
     get_planet_gifts = function()
@@ -887,7 +892,7 @@ local config_interface = {
     end,
     --- @param gifts table<planet:string, table<inventory:string, InventoryItem[]>>
     set_planet_gifts = function(gifts)
-        storage.config.planet_gifts = gifts or error("Only accepts table")
+        storage.config.planet_gifts = gifts or error("Only accepts table", 3)
     end,
     --- @return MiscSettings
     get_misc_settings = function()
@@ -895,7 +900,7 @@ local config_interface = {
     end,
     --- @param settings MiscSettings
     set_misc_settings = function(settings)
-        storage.config.misc_settings = settings or error("Only accepts table")
+        storage.config.misc_settings = settings or error("Only accepts table", 3)
     end
 }
 
@@ -915,7 +920,7 @@ local runtime_interface = {
         if surface.object_name ~= "LuaSurface"
                 or not surface
                 or not surface.valid then
-            error("Only accepts valid surface")
+            error("Only accepts valid surface", 3)
         end
         storage.control_room = surface
     end,
@@ -929,7 +934,7 @@ local runtime_interface = {
                 or not launcher.valid
                 or (launcher.type ~= "rocket-silo"
                 and launcher.type ~= "space-platform-hub") then
-            error("Only accepts rocket-silo or space-platform-hub")
+            error("Only accepts rocket-silo or space-platform-hub", 3)
         end
         storage.neutral_launcher = launcher
     end,
@@ -942,7 +947,7 @@ local runtime_interface = {
         if not pod
                 or pod.object_name ~= "LuaEntity"
                 or not pod.valid then
-            error("Only accepts LuaEntity")
+            error("Only accepts LuaEntity", 3)
         end
         storage.preview_pod = pod
     end,
@@ -957,25 +962,27 @@ local runtime_interface = {
     --- @param o CreateForceOptions
     --- @return boolean
     create_bnw_force = function(o)
+        local errlevel = 3
         if not o.force or o.force.object_name ~= "LuaForce" or not o.force.valid then
-            error("Only accepts LuaForce")
+            error("Only accepts LuaForce", errlevel)
         elseif o.player and (o.player.object_name ~= "LuaPlayer" or not o.player.valid) then
-            error("Only accepts LuaPlayer")
+            error("Only accepts LuaPlayer", errlevel)
         elseif not o.home or not o.home.surface
-                or o.home.surface ~= "LuaSurface" or not o.home.position then
-            error("Home must exist")
+                or type(o.home.surface) ~= "string" or type(o.home.position) ~= "table" then
+            error("Home must exist", errlevel)
         elseif not o.control_room or not o.control_room.surface
-                or o.control_room.surface ~= "LuaSurface" or not o.control_room.position then
-            error("Control room must exist")
+                or type(o.control_room.surface) ~= "string" or type(o.control_room.position) ~= "table" then
+            error("Control room must exist", errlevel)
             elseif not (o.launch_type == "initial" or o.launch_type == "launch" or o.launch_type == "creative") then
-            error("Launch type must be \"initial\", \"launch\", or \"creative\"")
+            error("Launch type must be \"initial\", \"launch\", or \"creative\"", errlevel)
         end
         create_force_with_player{
             force = o.force,
             player = o.player,
             home = o.home,
             control_room = o.control_room,
-            launch_type = o.launch_type
+            launch_type = o.launch_type,
+            errlevel = errlevel
         }
         return true
     end,

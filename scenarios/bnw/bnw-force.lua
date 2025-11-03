@@ -274,6 +274,7 @@ function BnwForce:restore_player_character(player)
 end
 
 function BnwForce:set_destination(o)
+    local errlevel = o.errlevel or 2
     self:check_state_for("prepare")
     local surface = o.surface or self.bnw.home.surface
     local position = o.position or self.bnw.home.position
@@ -281,13 +282,16 @@ function BnwForce:set_destination(o)
     local randomize_offset = o.randomize_offset == true or o.randomize_offset or false
     local launch_type = o.launch_type
     if launch_type == nil or surface == nil or position == nil then
-        error("Must specify launch_type, surface and position")
+        error("Must specify launch_type, surface and position", errlevel)
     end
-    assert(launch_type == "initial"
+    if not (launch_type == "initial"
             or launch_type == "platform"
-            or launch_type == "creative",
-            "Unsupported launch_type")
-    assert(launch_type == "initial" or o.platform, "Non-initial launch must have a platform")
+            or launch_type == "creative") then
+        error("Unsupported launch_type", errlevel)
+    end
+    if not (launch_type == "initial" or (o.platform and o.platform.surface)) then
+        error("Non-initial launch must have a platform with generated surface", errlevel)
+    end
 
     local offset = {x = 0, y = 0}
     if use_offset == true then
@@ -621,6 +625,7 @@ end
 -- after staging
 function BnwForce:clear_pod()
     local pod = self.bnw.landing.cargo_pod
+    self.bnw.landing.cargo_pod = nil
     if not pod or not pod.valid then
         return
     end
@@ -630,7 +635,6 @@ function BnwForce:clear_pod()
         inventory.clear()
     end
     pod.die()
-    self.bnw.landing.cargo_pod = nil
 end
 
 function BnwForce:place_bot_spawner(surface, position)
@@ -652,7 +656,10 @@ function BnwForce:place_bot_spawner(surface, position)
         if equipment ~= nil then
             equipment.energy = equipment.max_energy
         else
-            game.print("Failed placing bot spawner equipment " .. serpent.block(eq))
+            bnwutil.print_error("Failed placing bot spawner equipment "
+                    .. eq.name,
+                    eq,
+                    storage.config.bot_spawner_equipment)
         end
     end
     local fuel = tank.get_inventory(defines.inventory.fuel)
