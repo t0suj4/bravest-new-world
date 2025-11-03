@@ -946,21 +946,27 @@ function BnwForce:await_construction()
     local force, data = self.af, self.bnw
     local bot_spawner = data.landing.bot_spawner
     if not bot_spawner or not bot_spawner.valid then
-        log("Invalid bot spawner for force: " .. force.name)
-        game.print("Invalid bot spawner for force: " .. force.name)
+        bnwutil.print_error("Invalid bot spawner for force: " .. force.name)
         return false, false
     end
-    local trunk = bot_spawner.get_inventory(defines.inventory.car_trunk)
-    local items = 0
-    local matched_items = 0
-    for _, item in pairs(storage.config.bot_spawner_extra_items) do
-        items = items + 1
-        -- Might have collected some from the ground. Unlikely, but possible
-        if trunk.get_item_count(item) >= item.count then
-            matched_items = matched_items + 1
-        end
+    local network = bot_spawner.logistic_network
+    if not network then
+        bnwutil.print_error("Invalid bot spawner logistic network for force: "
+                .. force.name,
+                bot_spawner.prototype)
+        return false, false
     end
-    if items == matched_items then
+    local robots = network.construction_robots
+    -- hurry up
+    if #robots > 0 then
+        for _, robot in ipairs(robots) do
+            local capacity = robot.electric_buffer_size
+            local energy = robot.energy
+            if capacity and capacity > 0 and (energy/capacity) < 0.95 then
+                robot.energy = capacity * 0.95
+            end
+        end
+    else
         local cap_bonus = data.landing.awarded_capacity_bonus
         force.worker_robots_storage_bonus = force.worker_robots_storage_bonus - cap_bonus
 
