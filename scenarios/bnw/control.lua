@@ -526,7 +526,7 @@ script.on_event(defines.events.on_gui_closed, function(event)
     local player = game.get_player(event.player_index)
     local el = event.element
     if el and el.valid and el.name == MOD_PREFIX .. GUI_NAME then
-        gui.hide_colonization_gui(player, event.tick, event.name)
+        gui.hide_colonization_gui(player, game.ticks_played, event.name)
     elseif not player.opened then
         local colonization_gui = player.gui.screen[MOD_PREFIX .. GUI_NAME]
         if colonization_gui
@@ -563,7 +563,7 @@ script.on_event(defines.events.on_gui_opened, function(event)
         local player = game.get_player(event.player_index)
         local player_info = storage.players[event.player_index]
         if player_info
-                and event.tick == player_info.launch_gui_closed_tick
+                and game.ticks_played == player_info.launch_gui_closed_tick
                 and player_info.launch_gui_closed_reason == defines.events.on_gui_closed then
             gui.show_colonization_gui(player, true)
         end

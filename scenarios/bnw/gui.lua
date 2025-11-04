@@ -600,7 +600,7 @@ end
 
 function gui.handle_hiding_gui(event)
     local player = game.get_player(event.player_index)
-    gui.hide_colonization_gui(player, event.tick, event.name)
+    gui.hide_colonization_gui(player, game.ticks_played, event.name)
     gui.hide_location_tooltip(event.player_index)
 end
 
