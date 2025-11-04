@@ -20,6 +20,7 @@ GUI_LOCATION_TOOLTIP_NAME = "location-tooltip"
 LANDER_GUI_INNER_WIDTH = 396
 
 FORCE_FINISHED_STARTUP_EVENT = script.generate_event_name()
+FORCE_FINISHED_LANDING_EVENT = script.generate_event_name()
 FORCE_INVALIDATED_EVENT = script.generate_event_name()
 
 wiretap = require("wiretap")

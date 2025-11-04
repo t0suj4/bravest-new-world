@@ -337,14 +337,26 @@ local launch_callbacks = {
     end,
     onenterfinalizing = function(_, _, _, _, force_name)
         local bnw_force = BnwForce.get(force_name)
-        if bnw_force:launch_type() == "platform" then
+        local launch_type = bnw_force:launch_type()
+        if launch_type == "platform" then
             bnw_force:clear_launch_items()
         end
-        script.raise_event(FORCE_FINISHED_STARTUP_EVENT, {
-            name = FORCE_FINISHED_STARTUP_EVENT,
+        if launch_type == "initial" then
+            script.raise_event(FORCE_FINISHED_STARTUP_EVENT, {
+                name = FORCE_FINISHED_STARTUP_EVENT,
+                tick = game.tick,
+                force_name = force_name,
+                home = bnw_force.bnw.home,
+            })
+        end
+        script.raise_event(FORCE_FINISHED_LANDING_EVENT, {
+            name = FORCE_FINISHED_LANDING_EVENT,
             tick = game.tick,
             force_name = force_name,
             home = bnw_force.bnw.home,
+            destination = bnw_force.bnw.landing.destination,
+            landing_location = bnw_force.bnw.landing.landing_location,
+            launch_type = launch_type,
         })
         bnw_force:deactivate()
     end,
@@ -920,7 +932,7 @@ remote.add_interface("bravest-new-world-scenario-config", config_interface)
 local runtime_interface = {
     --- @return string
     get_interface_version = function()
-        return "0.1"
+        return "0.2"
     end,
     --- @return LuaSurface
     get_control_room = function()
@@ -965,6 +977,10 @@ local runtime_interface = {
     --- @return defines.event
     get_force_finished_startup_event = function()
         return FORCE_FINISHED_STARTUP_EVENT
+    end,
+    --- @return defines.event
+    get_force_finished_landing_event = function()
+        return FORCE_FINISHED_LANDING_EVENT
     end,
     --- @return defines.event
     get_force_invalidated_event = function()

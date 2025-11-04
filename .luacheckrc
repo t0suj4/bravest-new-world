@@ -29,6 +29,7 @@ local defined_globals = {
     "GUI_LOCATION_TOOLTIP_NAME",
     "LANDER_GUI_INNER_WIDTH",
     "FORCE_FINISHED_STARTUP_EVENT",
+    "FORCE_FINISHED_LANDING_EVENT",
     "FORCE_INVALIDATED_EVENT",
 
     -- required modules (globals assigned)
