@@ -209,7 +209,7 @@ local landing_states = {
 
 local launch_common = {
     "inventory",
-    "platform_index",
+    "platform_surface_index",
     "landing_location",
     "destination",
     "launch_type",
@@ -298,6 +298,9 @@ local launch_callbacks = {
     onstatechange = function(_, event, from, to, force_name)
         manage_subs(from, to)
         local bnw_force = BnwForce.get(force_name)
+        if to == "invalid" then
+            bnw_force:clean_landing()
+        end
         validate_keys(bnw_force.bnw.landing, valid_keys.landing, from)
         bnw_force.bnw.landing.time = game.tick
         log(serpent.block({event = event, from = from, to = to, force = force_name}))
@@ -360,9 +363,11 @@ local launch_callbacks = {
         })
         bnw_force:deactivate()
     end,
-    onenterinvalid = function(_, _, from, _, force_name)
-        game.print("Error: force " .. force_name ..": encountered invalid state in " .. from)
-        game.print("Please, reload previous save")
+    onenterinvalid = function(_, _, from, _, force_name, reason)
+        local bnw_force = BnwForce.get(force_name)
+        bnw_force.bnw.invalidated_count = (bnw_force.bnw.invalidated_count or 0) + 1
+        bnw_force.bnw.invalidated_last_reason = reason
+        bnw_force.bnw.invalidated_last_from = from
         script.raise_event(FORCE_INVALIDATED_EVENT, {
             name = FORCE_INVALIDATED_EVENT,
             tick = game.tick,
@@ -727,6 +732,7 @@ script.on_init(function()
     storage.config = config
     storage.setup_force_on_player_create = true
     storage.pod_inventory_size = 10
+    storage.scenario_version = script.active_mods[MOD_NAME] or SCENARIO_VERSION
     if remote.interfaces["freeplay"] then
         freeplay.on_init()
         remote.call("freeplay", "set_disable_crashsite", true)
@@ -749,11 +755,12 @@ end)
 script.on_configuration_changed(function(data)
     local bnw = data.mod_changes["bravest-new-world"]
     local new = bnw and bnw.new_version or nil
+    log("Configuration changed: " .. serpent.block(data))
     if new ~= nil then
         local old = storage.scenario_version
         if old ~= new then
-            game.reload_script()
             storage.scenario_version = new
+            game.reload_script()
         end
     end
 end)
@@ -829,6 +836,9 @@ script.on_event(defines.events.on_forces_merging, function(event)
         force_info.home.force = force
     end
 end)
+
+script.on_event(defines.events.on_pre_surface_deleted, BnwForce.handle_pre_surface_deleted)
+script.on_event(defines.events.on_pre_surface_cleared, BnwForce.handle_pre_surface_cleared)
 
 local function draw_blueprint(direction)
     local player = game.player;

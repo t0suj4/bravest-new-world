@@ -1,0 +1,1 @@
+-- Empty file, otherwise migrations won't have some global objects populated

@@ -448,7 +448,11 @@ function bnw_util.have_all_items(blueprint, inventory)
     return true
 end
 
-function bnw_util.platform_planet(platform)
+function bnw_util.platform_planet(surface)
+    local platform = surface.platform
+    if not (platform and platform.valid) then
+        return nil
+    end
     local location = platform.space_location
     if not location or location.type ~= "planet" then
         return nil

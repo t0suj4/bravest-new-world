@@ -80,7 +80,7 @@ local function show_bp(tree, blueprint)
     end
 end
 
-local function can_launch(player, platform_info)
+local function can_launch(force, player, platform_info)
     if not (platform_info.bp_inventory and platform_info.bp_inventory.valid) then
         bnwutil.print_error("Encountered invalid inventory", platform_info)
     end
@@ -93,21 +93,16 @@ local function can_launch(player, platform_info)
         bnwutil.print_error("Encountered invalid chest", platform_info)
         return nil, false
     end
-    local platform = platform_info.platform
-    if not (platform and platform.valid) then
-        bnwutil.print_error("encountered invalid platform", platform_info)
-        return nil, false
-    end
 
     -- this allows editor to launch on behalf of other forces
-    local bnw_force = BnwForce.get(platform.force.name)
+    local bnw_force = BnwForce.get(force.name)
     if not bnw_force then
-        bnwutil.raise_error("encountered invalid bnw_force: " .. platform.force.name)
+        bnwutil.raise_error("encountered invalid bnw_force: " .. force.name)
     end
 
     if not bnw_force:can("prepare") then return end
 
-    local planet = bnwutil.platform_planet(platform)
+    local planet = bnwutil.platform_planet(platform_info.surface)
     local has_creative = remote.interfaces["creative-mode"] and remote.call("creative-mode", "is_enabled")
     local skip_checks = has_creative or player.controller_type == defines.controllers.editor
     local items_valid = false
@@ -237,8 +232,13 @@ local function refresh_inventory(player, player_info, root, platform_info)
             hide_bp(tree)
         end
     end
+
+    local force = game.forces[player_info.platform_force_name]
+    if not (force and force.valid) then
+        error("Expected valid force")
+    end
     local launch_button = root.children[2].children[8].children[2]
-    local planet = can_launch(player, platform_info)
+    local planet = can_launch(force, player, platform_info)
     if planet then
         local planet_str = "[planet=" .. planet.name .. "]"
         launch_button.enabled = true
@@ -553,6 +553,9 @@ function gui.show_colonization_gui(player, secondary)
 
     local bnw_force = BnwForce.get(platform.force.name)
     if not bnw_force then return end
+    if bnw_force:is("invalid") then
+        bnw_force:trigger("revalidate")
+    end
 
     local container = player.gui.screen[MOD_PREFIX .. GUI_NAME]
     if not (container and container.valid) then
@@ -569,12 +572,12 @@ function gui.show_colonization_gui(player, secondary)
         return
     end
 
-    player_info.platform_index = platform.index
+    player_info.platform_surface_index = platform.surface.index
     player_info.platform_force_name = platform.force.name
 
-    local platform_info = bnw_force:get_platform(platform.index)
+    local platform_info = bnw_force:get_platform(platform.surface.index)
     if not platform_info then
-        platform_info = bnw_force:add_platform(platform)
+        platform_info = bnw_force:add_platform(platform.surface.index)
     end
 
     wiretap:subscribe("nth_tick", "handle_refresh_inventory", table_size(storage.players), 13)
@@ -652,11 +655,11 @@ end
 
 function gui.handle_refresh_inventory()
     for player_index, player_info in pairs(storage.players) do
-        if player_info.platform_index then
+        if player_info.platform_surface_index then
             local player = game.get_player(player_index)
             if player and player.valid and player.gui.screen[MOD_PREFIX .. GUI_NAME] then
                 local bnw_force = BnwForce.get(player_info.platform_force_name)
-                local platform_info = bnw_force:get_platform(player_info.platform_index)
+                local platform_info = bnw_force:get_platform(player_info.platform_surface_index)
                 if platform_info then
                     refresh_inventory(player, player_info, player.gui.screen[MOD_PREFIX .. GUI_NAME], platform_info)
                 end
@@ -671,12 +674,17 @@ end
 
 function gui.handle_launch_button(player, _, _)
     local player_info = storage.players[player.index]
-    if not player_info or not player_info.platform_index then return end
+    if not player_info or not player_info.platform_surface_index then return end
+    local platform_surface = game.get_surface(player_info.platform_surface_index)
+    if not platform_surface then return end
 
     local bnw_force = BnwForce.get(player_info.platform_force_name)
 
-    local platform_info = bnw_force:get_platform(player_info.platform_index)
-    local planet, creative = can_launch(player, platform_info)
+    local platform = platform_surface.platform
+    if not platform then return end
+    -- TODO: Migrate player platform index
+    local platform_info = bnw_force:get_platform(player_info.platform_surface_index)
+    local planet, creative = can_launch(platform.force, player, platform_info)
     if not planet then return end
 
     local surface = planet.create_surface()
@@ -807,8 +815,8 @@ function gui.handle_blueprint_button(player, button, event)
         game.print("handle_blueprint_button: player_info absent")
         return
     end
-    if not player_info.platform_index then
-        game.print("handle_blueprint_button: player_info.platform_index absent")
+    if not player_info.platform_surface_index then
+        game.print("handle_blueprint_button: player_info.platform_surface_index absent")
         return
     end
 
@@ -818,7 +826,7 @@ function gui.handle_blueprint_button(player, button, event)
         return
     end
 
-    local launch_platform = bnw_force:get_platform(player_info.platform_index)
+    local launch_platform = bnw_force:get_platform(player_info.platform_surface_index)
     local mouse = event.button
     if mouse == defines.mouse_button_type.right then
         clear_blueprint(player, button, launch_platform)

@@ -54,14 +54,14 @@ function BnwForce.mergeForces(destination, source)
         bnw_source.af = destination
         else
         if bnw_source:is("initial") or bnw_source:is("inactive") then
-            for platform_index, platform_info in pairs(bnw_source.bnw.platforms) do
-                bnw_destination.bnw.platforms[platform_index] = platform_info
+            for platform_surface_index, platform_info in pairs(bnw_source.bnw.platforms) do
+                bnw_destination.bnw.platforms[platform_surface_index] = platform_info
             end
             bnw_forces[source.name] = nil
         else
-            for platform_index, platform_info in pairs(bnw_source.bnw.platforms) do
-                if platform_index ~= bnw_source.bnw.landing.platform_index then
-                    bnw_destination.bnw.platforms[platform_index] = platform_info
+            for platform_surface_index, platform_info in pairs(bnw_source.bnw.platforms) do
+                if platform_surface_index ~= bnw_source.bnw.landing.platform_surface_index then
+                    bnw_destination.bnw.platforms[platform_surface_index] = platform_info
                 end
             end
 
@@ -117,14 +117,16 @@ local function place_structures(o)
     end
 end
 
-local function create_deploy_chest(platform, name)
-    local surface = platform.surface
-    local chest = surface.create_entity{name = name, position = {-2.5, -2.5}, force = platform.force}
+local function create_deploy_chest(force, surface, name)
+    assert(force and force.valid, "The force should exist")
+    assert(surface and surface.valid, "The surface should be generated")
+    local chest = surface.create_entity{name = name, position = {-2.5, -2.5}, force = force}
     if not chest then
         local position = surface.find_non_colliding_position(name, {0, 0}, 25, 1, true)
-        chest = surface.create_entity{name = name, position = position, force = platform.force}
+        chest = surface.create_entity{name = name, position = position, force = force}
+        local platform_name = surface.platform and surface.platform.name or ""
         if not chest then
-            game.print("Failed to create chest at " .. platform.name .. "(" .. platform.surface.name .. ")")
+            game.print("Failed to create chest at " .. platform_name .. "(" .. surface.name .. ")")
             return nil
         end
     end
@@ -207,10 +209,10 @@ function BnwForce.load(o)
     bnw_forces[name] = obj
 end
 
-function BnwForce:trigger(event)
+function BnwForce:trigger(event, arg)
     self:check_state_for(event)
     local fsm = self.fsm.landing
-    fsm[event](fsm, self.name)
+    fsm[event](fsm, self.name, arg)
 end
 
 function BnwForce:launch_type()
@@ -317,7 +319,7 @@ function BnwForce:set_destination(o)
     local slot = blueprint_inventory[1]
     local player_blueprint = false
     if o.platform and o.platform.valid then
-        local platform_info = self:get_platform(o.platform.index)
+        local platform_info = self:get_platform(o.platform.surface.index)
         if platform_info then
             slot.set_stack(platform_info.bp_inventory[1])
             player_blueprint = true
@@ -329,7 +331,7 @@ function BnwForce:set_destination(o)
 
     local landing_location = {surface = surface, position = pos.add(position, offset)}
     local landing = self.bnw.landing
-    landing.platform_index = o.platform and o.platform.index
+    landing.platform_surface_index = o.platform and o.platform.surface.index
     landing.blueprint_inventory = blueprint_inventory
     landing.player_blueprint = player_blueprint
     landing.landing_location = landing_location
@@ -362,21 +364,18 @@ function BnwForce:create_pod(launcher, player)
 end
 
 function BnwForce:stash_items()
-    local launch_platform = self:launch_platform()
-    if not (launch_platform and launch_platform.platform.valid) then
-        error("Expected valid platform")
-    end
-    local chest = launch_platform.component_chest
+    local platform_info = self:launch_platform_info()
+    local chest = platform_info.component_chest
     if not (chest and chest.valid) then
         error("Could not find construction item container")
     end
 
     -- TODO: recount items on every configuration change
     local chest_inv = chest.get_inventory(defines.inventory.chest)
-    if not chest_inv then
+    if not (chest_inv and chest_inv.valid) then
         error("Expected to find chest inventory")
     end
-    local inventory = game.create_inventory(#chest_inv - chest_inv.count_empty_stacks())
+    local inventory = assert(game.create_inventory(#chest_inv - chest_inv.count_empty_stacks()))
     assert(not bnwutil.copy_items_to(inventory, chest_inv), "Expected to transfer all construction items")
 
     self.bnw.landing.inventory = inventory
@@ -393,26 +392,23 @@ function BnwForce:clear_launch_items()
     inventory.destroy()
     self.bnw.landing.inventory = nil
 
-    local launch_platform = self:launch_platform()
-    if not launch_platform then
+    local platform_info = self:launch_platform_info()
+    if not platform_info then
         return
     end
-    local chest = launch_platform.component_chest
-    if not (chest and chest.valid) then
-        bnwutil.raise_error("Could not find construction item container", self.bnw)
+    local chest = platform_info.component_chest
+    if chest and chest.valid then
+        local chest_inv = chest.get_inventory(defines.inventory.chest)
+        if not chest_inv then
+            bnwutil.raise_error("Expected to find chest inventory", self.bnw)
+        end
+        chest_inv.clear()
     end
 
-    local chest_inv = chest.get_inventory(defines.inventory.chest)
-    if not chest_inv then
-        bnwutil.raise_error("Expected to find chest inventory", self.bnw)
+    local bp_inv = platform_info.bp_inventory
+    if bp_inv and bp_inv.valid then
+        bp_inv.clear()
     end
-    local bp_inv = launch_platform.bp_inventory
-    if not (bp_inv and bp_inv.valid) then
-        bnwutil.raise_error("Expected to find blueprint inventory", self.bnw)
-    end
-
-    chest_inv.clear()
-    bp_inv.clear()
 end
 
 -- ready
@@ -772,9 +768,9 @@ function BnwForce:deactivate()
             self:restore_player_character(player)
         end
     elseif launch_type == "platform" then
-        local launch_platform = self:launch_platform()
-        if launch_platform then
-            local chest = launch_platform.component_chest
+        local launch_platform_info = self:launch_platform_info()
+        if launch_platform_info then
+            local chest = launch_platform_info.component_chest
             if chest and chest.valid then
                 chest.clear_items_inside()
             end
@@ -785,14 +781,14 @@ function BnwForce:deactivate()
     self.bnw.landing.destination = nil
     if self.merged then
         local destination = bnw_forces[self.name]
-        local platform_index = self.bnw.landing.platform_index
+        local platform_surface_index = self.bnw.landing.platform_surface_index
         if destination then
-            local platform = self.bnw.platforms[platform_index]
-            destination.bnw.platforms[platform_index] = platform
+            local platform = self.bnw.platforms[platform_surface_index]
+            destination.bnw.platforms[platform_surface_index] = platform
         end
         bnw_forces[self.name] = nil
     end
-    self.bnw.landing.platform_index = nil
+    self.bnw.landing.platform_surface_index = nil
 end
 
 function BnwForce:player_cutscene(player)
@@ -986,30 +982,130 @@ function BnwForce:await_construction()
     return false, true
 end
 
-function BnwForce:add_platform(platform)
-    assert(not self.bnw.platforms[platform.index], "Platform is already registered")
+function BnwForce:add_platform(surface_index)
+    assert(not self.bnw.platforms[surface_index], "Platform is already registered")
+    local surface = assert(game.get_surface(surface_index), "The surface should be generated")
+    local platform = assert(surface.platform, "The surface should have a platform")
     local bp_inventory = game.create_inventory(1)
     local overflow_inventory = game.create_inventory(10)
-    local component_chest = create_deploy_chest(platform, "blue-chest")
-    local trash_chest = create_deploy_chest(platform, "red-chest")
+    local component_chest = create_deploy_chest(self.af, surface, "blue-chest")
+    local trash_chest = create_deploy_chest(self.af, surface, "red-chest")
     local platform_info = {
         platform = platform,
+        surface = surface,
         bp_inventory = bp_inventory,
         overflow_inventory = overflow_inventory,
         component_chest = component_chest,
         trash_chest = trash_chest,
     }
-    self.bnw.platforms[platform.index] = platform_info
+    self.bnw.platforms[surface_index] = platform_info
     return platform_info
+end
+
+function BnwForce:remove_platform(surface_index)
+    local pi = self.bnw.platforms[surface_index]
+    if pi then
+        if pi.bp_inventory and pi.bp_inventory.valid then
+            pi.bp_inventory.destroy()
+        end
+        if pi.overflow_inventory and pi.overflow_inventory.valid then
+            pi.overflow_inventory.destroy()
+        end
+        if pi.component_chest and pi.component_chest.valid then
+            pi.component_chest.destroy()
+        end
+        if pi.trash_chest and pi.trash_chest.valid then
+            pi.trash_chest.destroy()
+        end
+        pi.platform = nil
+        pi.surface = nil
+        pi.bp_inventory = nil
+        pi.overflow_inventory = nil
+        pi.component_chest = nil
+        pi.trash_chest = nil
+        self.bnw.platforms[surface_index] = nil
+    end
+end
+
+function BnwForce:clean_landing()
+    local landing = self.bnw.landing
+    landing.platform_surface_index = nil
+    local blueprint_inventory = landing.blueprint_inventory
+    if blueprint_inventory and blueprint_inventory.valid then
+        blueprint_inventory.destroy()
+    end
+    landing.blueprint_inventory = nil
+    landing.player_blueprint = nil
+    landing.landing_location = nil
+    landing.destination = nil
+    landing.launch_type = nil
+    if landing.player_index then
+        local player = game.get_player(landing.player_index)
+        if player and player.valid then
+            player.teleport(self.bnw.control_room.position, self.bnw.control_room.surface)
+        end
+    end
+    landing.player_index = nil
+    local pod = landing.cargo_pod
+    if pod and pod.valid then
+        pod.destroy()
+    end
+    landing.cargo_pod = nil
+    local inventory = landing.inventory
+    if inventory and inventory.valid then
+        inventory.destroy()
+    end
+    landing.inventory = nil
+    landing.extra_tile_ghosts = nil
+    if self.af and self.af.valid then
+        local cap_bonus = landing.awarded_capacity_bonus
+        if cap_bonus then
+            self.af.worker_robots_storage_bonus = self.af.worker_robots_storage_bonus - cap_bonus
+        end
+    end
+    landing.awarded_capacity_bonus = nil
+    local bot_spawner = landing.bot_spawner
+    if bot_spawner and bot_spawner.valid then
+        local network = bot_spawner.logistic_network
+        -- For cases when there is weird setup with the bot spawner
+        if network and #network.cells == 1 then
+            for _, robot in ipairs(network.robots) do
+                robot.destroy()
+            end
+        end
+        bot_spawner.destroy()
+    end
+    landing.bot_spawner = nil
 end
 
 function BnwForce:get_platform(index)
     return self.bnw.platforms[index]
 end
 
-function BnwForce:launch_platform()
-    local index = self.bnw.landing.platform_index
+function BnwForce:launch_platform_info()
+    local index = self.bnw.landing.platform_surface_index
     return index and self.bnw.platforms[index]
 end
+
+local function handle_clear(event)
+    for force_name in pairs(bnw_forces) do
+        local bnw_force = BnwForce.get(force_name)
+        local platform_info = bnw_force.bnw.platforms[event.surface_index]
+        if platform_info then
+            bnw_force:remove_platform(event.surface_index)
+            local pod = bnw_force.bnw.landing.cargo_pod
+            if pod and pod.valid then
+                if pod.surface.index == event.surface_index then
+                    bnw_force:trigger("invalidate", "Platform destroyed before cargo pod had left")
+                end
+            end
+        end
+    end
+    -- TODO: Handle control room and home deletion
+
+end
+
+BnwForce.handle_pre_surface_deleted = handle_clear
+BnwForce.handle_pre_surface_cleared = handle_clear
 
 return BnwForce

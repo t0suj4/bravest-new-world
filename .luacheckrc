@@ -14,6 +14,8 @@ globals = {
 local defined_globals = {
     -- constants
     "MOD_PREFIX",
+    "MOD_NAME",
+    "SCENARIO_VERSION",
     "TAG_STARTING_STRUCTURE",
     "TAG_STARTING_ROBOPORT",
     "TAG_FIRST_ROBOPORT",
