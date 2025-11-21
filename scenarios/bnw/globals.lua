@@ -1,7 +1,7 @@
 MOD_NAME = "bravest-new-world"
 MOD_PREFIX = MOD_NAME .. "-"
 
-SCENARIO_VERSION = "5.2.0"
+SCENARIO_VERSION = "5.2.1"
 
 TAG_STARTING_STRUCTURE = "bravest-new-world-starting-structure"
 TAG_STARTING_ROBOPORT =  "bravest-new-world-starting-roboport"

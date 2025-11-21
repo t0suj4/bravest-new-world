@@ -439,13 +439,14 @@ local function create_control_room()
     local mgs = {
         width = 32,
         height = 32,
+        default_enable_all_autoplace_controls = false,
+        no_enemies_mode = true,
     }
     local surface = game.create_surface(CONTROL_ROOM_SURFACE, mgs)
     surface.generate_with_lab_tiles = true
     surface.show_clouds = false
     surface.create_global_electric_network()
     surface.freeze_daytime = true
-    surface.no_enemies_mode = true
     surface.request_to_generate_chunks({0, 0}, 1)
     surface.force_generate_chunk_requests()
 
